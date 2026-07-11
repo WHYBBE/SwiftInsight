@@ -59,7 +59,13 @@ struct SystemOverviewBar: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 2)
-                if m.efficiencyCoreCount > 0 || m.performanceCoreCount > 0 {
+                if !m.cpuHWFormatted.isEmpty {
+                    Text(m.cpuHWFormatted)
+                        .font(.system(size: 9).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(cpuHWHelp(m))
+                } else if m.efficiencyCoreCount > 0 || m.performanceCoreCount > 0 {
                     Text(m.coreSummaryFormatted)
                         .font(.system(size: 9).monospacedDigit())
                         .foregroundStyle(.tertiary)
@@ -88,6 +94,23 @@ struct SystemOverviewBar: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .clipped()
+    }
+
+    private func cpuHWHelp(_ m: SystemMetrics) -> String {
+        var parts: [String] = []
+        if m.efficiencyFrequencyMHz > 0 {
+            parts.append(String(format: "E %.0f MHz", m.efficiencyFrequencyMHz))
+        }
+        if m.performanceFrequencyMHz > 0 {
+            parts.append(String(format: "P %.0f MHz", m.performanceFrequencyMHz))
+        }
+        if m.cpuTemperatureC > 0 {
+            parts.append(String(format: "%.0f°C", m.cpuTemperatureC))
+        }
+        if m.thermalState > 0 {
+            parts.append(m.thermalStateLabel)
+        }
+        return parts.isEmpty ? m.cpuHWFormatted : parts.joined(separator: " · ")
     }
 
     private func coreHelp(_ m: SystemMetrics) -> String {

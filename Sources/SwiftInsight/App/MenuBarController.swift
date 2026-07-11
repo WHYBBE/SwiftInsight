@@ -504,7 +504,20 @@ final class MenuBarPanelView: NSView {
         memLegendRows[3].setValue(byteString(m.availableMemory))
 
         // CPU
-        cpuMetaLabel.stringValue = String(format: "%.0f%% · %d 核", m.cpuUsed, max(m.processorCount, m.coreUsages.count))
+        let hw = m.cpuHWFormatted
+        if hw.isEmpty {
+            cpuMetaLabel.stringValue = String(format: "%.0f%% · %d 核", m.cpuUsed, max(m.processorCount, m.coreUsages.count))
+        } else {
+            cpuMetaLabel.stringValue = String(format: "%.0f%% · %@", m.cpuUsed, hw)
+        }
+        cpuMetaLabel.toolTip = {
+            var parts: [String] = [String(format: "%d 核", max(m.processorCount, m.coreUsages.count))]
+            if m.efficiencyFrequencyMHz > 0 { parts.append(String(format: "E %.0f MHz", m.efficiencyFrequencyMHz)) }
+            if m.performanceFrequencyMHz > 0 { parts.append(String(format: "P %.0f MHz", m.performanceFrequencyMHz)) }
+            if m.cpuTemperatureC > 0 { parts.append(String(format: "%.0f°C", m.cpuTemperatureC)) }
+            if m.thermalState > 0 { parts.append(m.thermalStateLabel) }
+            return parts.joined(separator: " · ")
+        }()
         let eCount = m.efficiencyCoreCount
         let pCount = m.performanceCoreCount
         coreDots.configure(

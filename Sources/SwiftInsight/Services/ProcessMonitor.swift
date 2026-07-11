@@ -284,11 +284,14 @@ final class ProcessMonitor: ObservableObject {
         sampleQueue.async { [weak self] in
             // 若已安装 setuid helper，用 root 视角补全受限进程指标
             let privileged = PrivilegedMetricsClient.sampleAll()
+            // 频率/温度节流采样（powermetrics 较慢）
+            let sensors = PrivilegedMetricsClient.sampleSensors()
             let snapshot = ProcessSampler.collect(
                 previousCPU: previousCPU,
                 classificationCache: classificationCache,
                 usernameCache: usernameCache,
-                privileged: privileged
+                privileged: privileged,
+                sensors: sensors
             )
             DispatchQueue.main.async {
                 self?.applySnapshot(snapshot)
@@ -392,11 +395,13 @@ private enum ProcessSampler {
         previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)],
         classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)],
         usernameCache: [uid_t: String],
-        privileged: PrivilegedMetricsClient.Snapshot? = nil
+        privileged: PrivilegedMetricsClient.Snapshot? = nil,
+        sensors: PrivilegedMetricsClient.Sensors = .init()
     ) -> Snapshot {
         let now = Date()
         let wallNow = ProcessInfo.processInfo.systemUptime
-        let systemMetrics = SystemMetricsCollector.sample()
+        var systemMetrics = SystemMetricsCollector.sample()
+        PrivilegedMetricsClient.applySensors(sensors, to: &systemMetrics)
 
         var pids = [Int32](repeating: 0, count: 4096)
         let count = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, Int32(MemoryLayout<Int32>.size * pids.count))

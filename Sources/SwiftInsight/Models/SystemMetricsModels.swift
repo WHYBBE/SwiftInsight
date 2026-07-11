@@ -13,6 +13,15 @@ struct SystemMetrics: Equatable {
     var performanceCoreUsage: Double = 0
     var efficiencyCoreUsage: Double = 0
 
+    /// 当前/活跃频率 MHz（0 = 未知）
+    var cpuFrequencyMHz: Double = 0
+    var efficiencyFrequencyMHz: Double = 0
+    var performanceFrequencyMHz: Double = 0
+    /// CPU 封装/Die 温度 °C（0 = 未知）
+    var cpuTemperatureC: Double = 0
+    /// 系统热状态 0=nominal … 3=critical（ProcessInfo）
+    var thermalState: Int = 0
+
     var physicalMemory: UInt64 = 0
     var usedMemory: UInt64 = 0
     var wiredMemory: UInt64 = 0
@@ -73,6 +82,30 @@ struct SystemMetrics: Equatable {
             return String(format: "E %.0f%%  P %.0f%%", efficiencyCoreUsage, performanceCoreUsage)
         }
         return String(format: "%d 核", processorCount)
+    }
+    var frequencyFormatted: String? {
+        guard cpuFrequencyMHz > 1 else { return nil }
+        if cpuFrequencyMHz >= 1000 {
+            return String(format: "%.2f GHz", cpuFrequencyMHz / 1000)
+        }
+        return String(format: "%.0f MHz", cpuFrequencyMHz)
+    }
+    var temperatureFormatted: String? {
+        guard cpuTemperatureC > 1 else { return nil }
+        return String(format: "%.0f°", cpuTemperatureC)
+    }
+    /// 菜单栏/总览：如 "2.2 GHz, 54°"
+    var cpuHWFormatted: String {
+        let parts = [frequencyFormatted, temperatureFormatted].compactMap { $0 }
+        return parts.isEmpty ? "" : parts.joined(separator: ", ")
+    }
+    var thermalStateLabel: String {
+        switch thermalState {
+        case 1: return "热·中"
+        case 2: return "热·高"
+        case 3: return "热·危"
+        default: return "正常"
+        }
     }
 
     private func rateString(_ bytesPerSec: Double) -> String {

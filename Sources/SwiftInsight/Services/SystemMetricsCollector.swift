@@ -19,6 +19,7 @@ enum SystemMetricsCollector {
         var metrics = SystemMetrics()
         metrics.processorCount = ProcessInfo.processInfo.activeProcessorCount
         metrics.physicalMemory = ProcessInfo.processInfo.physicalMemory
+        metrics.thermalState = ProcessInfo.processInfo.thermalState.rawValue
         fillCoreTopology(&metrics)
 
         fillCPU(&metrics)
@@ -28,7 +29,17 @@ enum SystemMetricsCollector {
         fillLoad(&metrics)
         fillNetwork(&metrics)
         fillDisk(&metrics)
+        // Intel 可公开读频率；Apple Silicon 需 helper sensors
+        fillPublicFrequency(&metrics)
         return metrics
+    }
+
+    private static func fillPublicFrequency(_ metrics: inout SystemMetrics) {
+        var hz: UInt64 = 0
+        var size = MemoryLayout<UInt64>.size
+        if sysctlbyname("hw.cpufrequency", &hz, &size, nil, 0) == 0, hz > 0 {
+            metrics.cpuFrequencyMHz = Double(hz) / 1_000_000.0
+        }
     }
 
     // MARK: - Topology (P/E)
