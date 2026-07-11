@@ -212,25 +212,45 @@ struct ResourceBreakdownView: View {
             }
         }
         .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func stackedBar(segments: [(Color, Double)], total: Double) -> some View {
-        GeometryReader { geo in
-            HStack(spacing: 1) {
-                ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
-                    let w = max(0, geo.size.width * CGFloat(seg.1 / total))
-                    if w > 0.5 {
-                        Rectangle()
-                            .fill(seg.0)
-                            .frame(width: w)
+        let values = segments.map { max(0, $0.1) }
+        let sum = max(values.reduce(0, +), total, 0.0001)
+
+        return Canvas { context, size in
+            // 背景
+            let bg = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2)
+            context.fill(bg, with: .color(Color.secondary.opacity(0.15)))
+
+            var x: CGFloat = 0
+            let h = size.height
+            let w = size.width
+            for (index, seg) in segments.enumerated() {
+                let fraction = CGFloat(values[index] / sum)
+                guard fraction > 0 else { continue }
+                // 至少 1pt，避免极小分段完全看不见；最后一段吃到右边界，消除舍入缺口
+                var segmentWidth = w * fraction
+                if index == segments.count - 1 {
+                    segmentWidth = max(0, w - x)
+                } else {
+                    segmentWidth = max(segmentWidth > 0 ? 1 : 0, floor(segmentWidth))
+                    if x + segmentWidth > w {
+                        segmentWidth = max(0, w - x)
                     }
                 }
+                guard segmentWidth > 0 else { continue }
+                let rect = CGRect(x: x, y: 0, width: segmentWidth, height: h)
+                context.fill(Path(rect), with: .color(seg.0))
+                x += segmentWidth
+                if x >= w { break }
             }
-            .frame(height: 8)
-            .clipShape(Capsule())
-            .background(Capsule().fill(Color.secondary.opacity(0.15)))
         }
+        .frame(maxWidth: .infinity)
         .frame(height: 8)
+        .clipShape(Capsule())
+        .accessibilityHidden(true)
     }
 
     private func legendRow(color: Color, title: String, value: String) -> some View {
