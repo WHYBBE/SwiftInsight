@@ -35,6 +35,14 @@ struct ContentView: View {
         .searchable(text: $monitor.filterText, prompt: "搜索名称、PID、路径、Bundle ID…")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Picker("视图", selection: $monitor.displayMode) {
+                    ForEach(ListDisplayMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 120)
+
                 Picker("刷新", selection: $monitor.refreshInterval) {
                     Text("1 秒").tag(1.0)
                     Text("2 秒").tag(2.0)

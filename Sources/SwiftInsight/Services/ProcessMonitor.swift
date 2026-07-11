@@ -9,6 +9,8 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var processes: [MonitoredProcess] = []
     /// 已过滤/排序的稳定快照，供列表直接使用
     @Published private(set) var displayedProcesses: [MonitoredProcess] = []
+    /// 树形/列表统一展示行
+    @Published private(set) var displayRows: [ProcessDisplayRow] = []
     @Published private(set) var summary = ResourceSummary()
     @Published private(set) var lastUpdate: Date = .distantPast
     @Published private(set) var isRunning = false
@@ -33,6 +35,12 @@ final class ProcessMonitor: ObservableObject {
     @Published var showOnlyApps = false {
         didSet { recomputeDisplayed() }
     }
+    /// 列表 / 聚合树
+    @Published var displayMode: ListDisplayMode = .tree {
+        didSet { recomputeDisplayed() }
+    }
+    /// 展开的聚合节点 key
+    @Published private(set) var expandedGroups: Set<String> = []
 
     private var timer: Timer?
     private var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
@@ -100,24 +108,66 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
+    func toggleExpanded(_ groupKey: String) {
+        if expandedGroups.contains(groupKey) {
+            expandedGroups.remove(groupKey)
+        } else {
+            expandedGroups.insert(groupKey)
+        }
+        recomputeDisplayed()
+    }
+
+    func setExpanded(_ groupKey: String, _ expanded: Bool) {
+        if expanded {
+            expandedGroups.insert(groupKey)
+        } else {
+            expandedGroups.remove(groupKey)
+        }
+        recomputeDisplayed()
+    }
+
     private func recomputeDisplayed() {
-        displayedProcesses = Self.filterAndSort(
+        let filtered = Self.filterProcesses(
             processes: processes,
             categoryFilter: categoryFilter,
             showOnlyApps: showOnlyApps,
-            filterText: filterText,
-            sortColumn: sortColumn,
-            sortAscending: sortAscending
+            filterText: filterText
         )
+
+        switch displayMode {
+        case .flat:
+            let sorted = Self.sortProcesses(filtered, column: sortColumn, ascending: sortAscending)
+            displayedProcesses = sorted
+            displayRows = sorted.map { p in
+                ProcessDisplayRow(
+                    id: "pid:\(p.pid)",
+                    process: p,
+                    depth: 0,
+                    hasChildren: false,
+                    isExpanded: false,
+                    memberCount: 1,
+                    isGroupRoot: false,
+                    groupKey: "pid:\(p.pid)"
+                )
+            }
+        case .tree:
+            let forest = ProcessAggregator.buildForest(from: filtered)
+            let rows = ProcessAggregator.flatten(
+                forest,
+                expanded: expandedGroups,
+                sortColumn: sortColumn,
+                sortAscending: sortAscending
+            )
+            displayRows = rows
+            displayedProcesses = rows.map(\.process)
+        }
     }
 
-    private static func filterAndSort(
+    private static func filterProcesses(
         processes: [MonitoredProcess],
         categoryFilter: ProcessCategory?,
         showOnlyApps: Bool,
-        filterText: String,
-        sortColumn: SortColumn,
-        sortAscending: Bool
+        filterText: String
     ) -> [MonitoredProcess] {
         var list = processes
 
@@ -126,32 +176,42 @@ final class ProcessMonitor: ObservableObject {
         }
 
         if showOnlyApps {
-            list = list.filter { $0.kind == .app }
+            list = list.filter { $0.kind == .app || $0.path.contains(".app/") }
         }
 
         let q = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !q.isEmpty {
-            list = list.filter {
+            // 搜索命中时保留同组相关进程（通过名称族 / app 路径）
+            let matched = list.filter {
                 $0.name.lowercased().contains(q)
                     || $0.path.lowercased().contains(q)
                     || ($0.bundleIdentifier?.lowercased().contains(q) ?? false)
                     || String($0.pid).contains(q)
                     || $0.username.lowercased().contains(q)
             }
+            if matched.isEmpty {
+                list = []
+            } else {
+                let keys = Set(matched.map { ProcessAggregator.groupKey(for: $0, all: Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })) })
+                let byPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
+                list = list.filter { keys.contains(ProcessAggregator.groupKey(for: $0, all: byPID)) }
+            }
         }
+        return list
+    }
 
-        list.sort { a, b in
+    private static func sortProcesses(_ list: [MonitoredProcess], column: SortColumn, ascending: Bool) -> [MonitoredProcess] {
+        list.sorted { a, b in
             let result: Bool
-            switch sortColumn {
+            switch column {
             case .cpu:     result = a.cpuPercent < b.cpuPercent
             case .memory:  result = a.memoryBytes < b.memoryBytes
             case .name:    result = a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
             case .pid:     result = a.pid < b.pid
             case .threads: result = a.threadCount < b.threadCount
             }
-            return sortAscending ? result : !result
+            return ascending ? result : !result
         }
-        return list
     }
 
     // MARK: - Kill / Sample

@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// AppKit NSTableView 封装：系统级条纹、流畅滚动，且数据更新不走 SwiftUI.Table 重入路径
+/// AppKit NSTableView 封装：系统级条纹、流畅滚动；支持聚合树缩进与展开
 struct ProcessTableView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
     @Binding var selectedPID: Int32?
@@ -10,13 +10,16 @@ struct ProcessTableView: View {
         VStack(spacing: 0) {
             sortHeader
             ProcessNSTable(
-                processes: monitor.displayedProcesses,
+                rows: monitor.displayRows,
                 selectedPID: $selectedPID,
                 onTerminate: { pid, force in
                     monitor.terminate(pid: pid, force: force)
                 },
                 onFilterCategory: { category in
                     monitor.categoryFilter = category
+                },
+                onToggleExpand: { key in
+                    monitor.toggleExpanded(key)
                 }
             )
         }
@@ -24,6 +27,16 @@ struct ProcessTableView: View {
 
     private var sortHeader: some View {
         HStack(spacing: 12) {
+            Picker("视图", selection: $monitor.displayMode) {
+                ForEach(ListDisplayMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 140)
+
+            Divider().frame(height: 16)
+
             Text("排序:")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -51,7 +64,7 @@ struct ProcessTableView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
-            Text("\(monitor.displayedProcesses.count) 项")
+            Text(countLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -59,15 +72,24 @@ struct ProcessTableView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
     }
+
+    private var countLabel: String {
+        if monitor.displayMode == .tree {
+            let groups = monitor.displayRows.filter { $0.depth == 0 }.count
+            return "\(groups) 组 · \(monitor.displayRows.count) 行"
+        }
+        return "\(monitor.displayRows.count) 项"
+    }
 }
 
 // MARK: - NSTableView bridge
 
 private struct ProcessNSTable: NSViewRepresentable {
-    let processes: [MonitoredProcess]
+    let rows: [ProcessDisplayRow]
     @Binding var selectedPID: Int32?
     var onTerminate: (Int32, Bool) -> Void
     var onFilterCategory: (ProcessCategory) -> Void
+    var onToggleExpand: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -119,7 +141,7 @@ private struct ProcessNSTable: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.apply(processes: processes, selectedPID: selectedPID)
+        context.coordinator.apply(rows: rows, selectedPID: selectedPID)
     }
 
     final class Coordinator: NSObject, NSTableViewDelegate, NSTableViewDataSource {
@@ -132,7 +154,7 @@ private struct ProcessNSTable: NSViewRepresentable {
         }
 
         static let columns: [ColumnDef] = [
-            .init(id: .init("name"), title: "名称", width: 320, minWidth: 180, numeric: false),
+            .init(id: .init("name"), title: "名称", width: 360, minWidth: 200, numeric: false),
             .init(id: .init("cpu"), title: "CPU %", width: 72, minWidth: 56, numeric: true),
             .init(id: .init("memory"), title: "内存", width: 90, minWidth: 70, numeric: true),
             .init(id: .init("threads"), title: "线程", width: 56, minWidth: 44, numeric: true),
@@ -144,7 +166,7 @@ private struct ProcessNSTable: NSViewRepresentable {
         weak var tableView: NSTableView?
         weak var scrollView: NSScrollView?
 
-        private var rows: [MonitoredProcess] = []
+        private var rows: [ProcessDisplayRow] = []
         private var isApplying = false
         private var iconCache: [String: NSImage] = [:]
 
@@ -152,16 +174,15 @@ private struct ProcessNSTable: NSViewRepresentable {
             self.parent = parent
         }
 
-        func apply(processes: [MonitoredProcess], selectedPID: Int32?) {
+        func apply(rows: [ProcessDisplayRow], selectedPID: Int32?) {
             guard !isApplying else { return }
 
-            let dataChanged = !Self.sameDisplayData(rows, processes)
+            let dataChanged = !Self.sameDisplayData(self.rows, rows)
             let selectionChanged = selectedPID != currentSelectedPID()
 
             guard dataChanged || selectionChanged else { return }
 
             isApplying = true
-            // 避开 NSTableView 委托回调栈内同步 reload
             DispatchQueue.main.async { [weak self] in
                 guard let self, let table = self.tableView else {
                     self?.isApplying = false
@@ -173,7 +194,7 @@ private struct ProcessNSTable: NSViewRepresentable {
                 let savedOrigin = clip?.bounds.origin
 
                 if dataChanged {
-                    self.rows = processes
+                    self.rows = rows
                     table.reloadData()
                 }
 
@@ -208,12 +229,13 @@ private struct ProcessNSTable: NSViewRepresentable {
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             guard row >= 0, row < rows.count, let tableColumn else { return nil }
-            let process = rows[row]
+            let item = rows[row]
+            let process = item.process
             let id = tableColumn.identifier
 
             switch id.rawValue {
             case "name":
-                return nameCell(tableView: tableView, process: process)
+                return nameCell(tableView: tableView, row: item)
             case "cpu":
                 return textCell(
                     tableView: tableView,
@@ -273,38 +295,36 @@ private struct ProcessNSTable: NSViewRepresentable {
         }
 
         @objc func doubleClicked(_ sender: Any?) {
-            // 预留：双击可扩展为显示详情
+            guard let table = tableView else { return }
+            let row = table.clickedRow
+            guard row >= 0, row < rows.count else { return }
+            let item = rows[row]
+            if item.hasChildren {
+                parent.onToggleExpand(item.groupKey)
+            }
         }
 
         // MARK: Cells
 
-        private func nameCell(tableView: NSTableView, process: MonitoredProcess) -> NSView {
-            let cellID = NSUserInterfaceItemIdentifier("nameCell")
-            let cell = tableView.makeView(withIdentifier: cellID, owner: self) as? NSTableCellView
-                ?? makeIconTextCell(identifier: cellID)
+        private func nameCell(tableView: NSTableView, row item: ProcessDisplayRow) -> NSView {
+            let cellID = NSUserInterfaceItemIdentifier("nameTreeCell")
+            let cell = tableView.makeView(withIdentifier: cellID, owner: self) as? TreeNameCell
+                ?? TreeNameCell(identifier: cellID)
 
-            cell.imageView?.image = icon(for: process)
-            cell.imageView?.imageScaling = .scaleProportionallyUpOrDown
-
-            let title = process.name
-            let tag = process.category.shortName
-            let attributed = NSMutableAttributedString(
-                string: title,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 12),
-                    .foregroundColor: NSColor.labelColor,
-                ]
+            let process = item.process
+            cell.configure(
+                icon: icon(for: process),
+                title: process.name,
+                tag: process.category.shortName,
+                memberCount: item.hasChildren ? item.memberCount : nil,
+                depth: item.depth,
+                hasChildren: item.hasChildren,
+                isExpanded: item.isExpanded,
+                toolTip: process.path.isEmpty ? process.name : process.path
             )
-            attributed.append(NSAttributedString(
-                string: "  \(tag)",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 10, weight: .medium),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                ]
-            ))
-            cell.textField?.attributedStringValue = attributed
-            cell.textField?.toolTip = process.path.isEmpty ? process.name : process.path
-            cell.textField?.lineBreakMode = .byTruncatingTail
+            cell.onToggle = { [weak self] in
+                self?.parent.onToggleExpand(item.groupKey)
+            }
             return cell
         }
 
@@ -322,40 +342,6 @@ private struct ProcessNSTable: NSViewRepresentable {
             cell.textField?.textColor = color
             cell.textField?.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
             cell.textField?.lineBreakMode = .byTruncatingTail
-            return cell
-        }
-
-        private func makeIconTextCell(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
-            let cell = NSTableCellView()
-            cell.identifier = identifier
-
-            let imageView = NSImageView()
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            imageView.imageScaling = .scaleProportionallyUpOrDown
-
-            let textField = NSTextField(labelWithString: "")
-            textField.translatesAutoresizingMaskIntoConstraints = false
-            textField.isEditable = false
-            textField.isBordered = false
-            textField.drawsBackground = false
-            textField.lineBreakMode = .byTruncatingTail
-            textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-            cell.addSubview(imageView)
-            cell.addSubview(textField)
-            cell.imageView = imageView
-            cell.textField = textField
-
-            NSLayoutConstraint.activate([
-                imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                imageView.widthAnchor.constraint(equalToConstant: 16),
-                imageView.heightAnchor.constraint(equalToConstant: 16),
-
-                textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
             return cell
         }
 
@@ -396,18 +382,23 @@ private struct ProcessNSTable: NSViewRepresentable {
             return .secondaryLabelColor
         }
 
-        private static func sameDisplayData(_ a: [MonitoredProcess], _ b: [MonitoredProcess]) -> Bool {
+        private static func sameDisplayData(_ a: [ProcessDisplayRow], _ b: [ProcessDisplayRow]) -> Bool {
             guard a.count == b.count else { return false }
             for i in a.indices {
                 let x = a[i]
                 let y = b[i]
-                if x.pid != y.pid
-                    || x.name != y.name
-                    || abs(x.cpuPercent - y.cpuPercent) > 0.05
-                    || x.memoryBytes != y.memoryBytes
-                    || x.threadCount != y.threadCount
-                    || x.username != y.username
-                    || x.category != y.category {
+                if x.id != y.id
+                    || x.depth != y.depth
+                    || x.hasChildren != y.hasChildren
+                    || x.isExpanded != y.isExpanded
+                    || x.memberCount != y.memberCount
+                    || x.process.pid != y.process.pid
+                    || x.process.name != y.process.name
+                    || abs(x.process.cpuPercent - y.process.cpuPercent) > 0.05
+                    || x.process.memoryBytes != y.process.memoryBytes
+                    || x.process.threadCount != y.process.threadCount
+                    || x.process.username != y.process.username
+                    || x.process.category != y.process.category {
                     return false
                 }
             }
@@ -423,7 +414,7 @@ private struct ProcessNSTable: NSViewRepresentable {
             return menu
         }
 
-        private func processAtClickedRow() -> MonitoredProcess? {
+        private func processAtClickedRow() -> ProcessDisplayRow? {
             guard let table = tableView else { return nil }
             let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
             guard row >= 0, row < rows.count else { return nil }
@@ -432,10 +423,144 @@ private struct ProcessNSTable: NSViewRepresentable {
     }
 }
 
+// MARK: - Tree name cell
+
+private final class TreeNameCell: NSTableCellView {
+    private let disclosure = NSButton()
+    private let iconView = NSImageView()
+    private let titleField = NSTextField(labelWithString: "")
+    private var leadingConstraint: NSLayoutConstraint?
+    var onToggle: (() -> Void)?
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        disclosure.bezelStyle = .inline
+        disclosure.isBordered = false
+        disclosure.imagePosition = .imageOnly
+        disclosure.target = self
+        disclosure.action = #selector(toggle)
+        disclosure.translatesAutoresizingMaskIntoConstraints = false
+        disclosure.setButtonType(.momentaryChange)
+
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+
+        titleField.translatesAutoresizingMaskIntoConstraints = false
+        titleField.isEditable = false
+        titleField.isBordered = false
+        titleField.drawsBackground = false
+        titleField.lineBreakMode = .byTruncatingTail
+        titleField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        addSubview(disclosure)
+        addSubview(iconView)
+        addSubview(titleField)
+        imageView = iconView
+        textField = titleField
+
+        let lead = disclosure.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2)
+        leadingConstraint = lead
+
+        NSLayoutConstraint.activate([
+            lead,
+            disclosure.centerYAnchor.constraint(equalTo: centerYAnchor),
+            disclosure.widthAnchor.constraint(equalToConstant: 14),
+            disclosure.heightAnchor.constraint(equalToConstant: 14),
+
+            iconView.leadingAnchor.constraint(equalTo: disclosure.trailingAnchor, constant: 2),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 16),
+            iconView.heightAnchor.constraint(equalToConstant: 16),
+
+            titleField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
+            titleField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            titleField.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    func configure(
+        icon: NSImage,
+        title: String,
+        tag: String,
+        memberCount: Int?,
+        depth: Int,
+        hasChildren: Bool,
+        isExpanded: Bool,
+        toolTip: String
+    ) {
+        leadingConstraint?.constant = 2 + CGFloat(depth) * 16
+        iconView.image = icon
+
+        if hasChildren {
+            disclosure.isHidden = false
+            disclosure.image = NSImage(
+                systemSymbolName: isExpanded ? "chevron.down" : "chevron.right",
+                accessibilityDescription: isExpanded ? "折叠" : "展开"
+            )
+            disclosure.contentTintColor = .secondaryLabelColor
+            disclosure.isEnabled = true
+        } else {
+            disclosure.isHidden = false
+            disclosure.image = nil
+            disclosure.isEnabled = false
+        }
+
+        let attributed = NSMutableAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        if let memberCount, memberCount > 1 {
+            attributed.append(NSAttributedString(
+                string: "  ·\(memberCount)",
+                attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]
+            ))
+        }
+        attributed.append(NSAttributedString(
+            string: "  \(tag)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        ))
+        titleField.attributedStringValue = attributed
+        titleField.toolTip = toolTip
+    }
+
+    @objc private func toggle() {
+        onToggle?()
+    }
+}
+
 extension ProcessNSTable.Coordinator: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let process = processAtClickedRow() else { return }
+        guard let item = processAtClickedRow() else { return }
+        let process = item.process
+
+        if item.hasChildren {
+            let title = item.isExpanded ? "折叠" : "展开"
+            let expand = NSMenuItem(title: title, action: #selector(toggleExpand(_:)), keyEquivalent: "")
+            expand.target = self
+            expand.representedObject = item.groupKey
+            menu.addItem(expand)
+            menu.addItem(.separator())
+        }
 
         let quit = NSMenuItem(title: "退出", action: #selector(quitProcess(_:)), keyEquivalent: "")
         quit.target = self
@@ -474,6 +599,11 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
         filter.target = self
         filter.representedObject = process.category.rawValue
         menu.addItem(filter)
+    }
+
+    @objc private func toggleExpand(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        parent.onToggleExpand(key)
     }
 
     @objc private func quitProcess(_ sender: NSMenuItem) {
