@@ -2,11 +2,14 @@
 
 [English](README.md) · 中文
 
+<p align="center">
+  <img src="docs/app-icon.png" alt="SwiftInsight" width="128" />
+</p>
+
 > 使用 Grok 4.5 / OpenCode Vibe Coding 而成。
 
 macOS **活动监视器替代应用**，使用 **Swift / SwiftUI** 构建。  
 侧重：**Apple / 第三方资源对比**、稳定的**菜单栏轻量面板**，以及可选的 **root Helper** 补全受限指标。
-
 
 <p align="center">
   <img src="docs/preview-main-zh.png" alt="SwiftInsight 主窗口" width="900" />

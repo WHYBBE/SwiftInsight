@@ -2,11 +2,14 @@
 
 [中文](README.zh-CN.md) · English
 
+<p align="center">
+  <img src="docs/app-icon.png" alt="SwiftInsight" width="128" />
+</p>
+
 > Built with Grok 4.5 / OpenCode vibe coding.
 
 A lightweight **Activity Monitor alternative** for macOS, built with **Swift / SwiftUI**.  
 Focus: **Apple vs third-party** resource breakdown, a stable **menu bar** panel, and optional **root helper** metrics.
-
 
 <p align="center">
   <img src="docs/preview-main-en.png" alt="SwiftInsight main window" width="900" />
