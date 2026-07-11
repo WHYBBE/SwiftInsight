@@ -7,6 +7,8 @@ import Combine
 final class ProcessMonitor: ObservableObject {
 
     @Published private(set) var processes: [MonitoredProcess] = []
+    /// 已过滤/排序的稳定快照，供 Table 直接使用，避免 body 内反复计算触发重入
+    @Published private(set) var displayedProcesses: [MonitoredProcess] = []
     @Published private(set) var summary = ResourceSummary()
     @Published private(set) var lastUpdate: Date = .distantPast
     @Published private(set) var isRunning = false
@@ -16,11 +18,21 @@ final class ProcessMonitor: ObservableObject {
         didSet { restartTimer() }
     }
 
-    @Published var sortColumn: SortColumn = .cpu
-    @Published var sortAscending = false
-    @Published var filterText = ""
-    @Published var categoryFilter: ProcessCategory? = nil
-    @Published var showOnlyApps = false
+    @Published var sortColumn: SortColumn = .cpu {
+        didSet { recomputeDisplayed() }
+    }
+    @Published var sortAscending = false {
+        didSet { recomputeDisplayed() }
+    }
+    @Published var filterText = "" {
+        didSet { recomputeDisplayed() }
+    }
+    @Published var categoryFilter: ProcessCategory? = nil {
+        didSet { recomputeDisplayed() }
+    }
+    @Published var showOnlyApps = false {
+        didSet { recomputeDisplayed() }
+    }
 
     private var timer: Timer?
     private var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
@@ -79,7 +91,34 @@ final class ProcessMonitor: ObservableObject {
 
     // MARK: - Filtering / Sorting
 
-    var displayedProcesses: [MonitoredProcess] {
+    func toggleSort(_ column: SortColumn) {
+        if sortColumn == column {
+            sortAscending.toggle()
+        } else {
+            sortColumn = column
+            sortAscending = (column == .name || column == .pid)
+        }
+    }
+
+    private func recomputeDisplayed() {
+        displayedProcesses = Self.filterAndSort(
+            processes: processes,
+            categoryFilter: categoryFilter,
+            showOnlyApps: showOnlyApps,
+            filterText: filterText,
+            sortColumn: sortColumn,
+            sortAscending: sortAscending
+        )
+    }
+
+    private static func filterAndSort(
+        processes: [MonitoredProcess],
+        categoryFilter: ProcessCategory?,
+        showOnlyApps: Bool,
+        filterText: String,
+        sortColumn: SortColumn,
+        sortAscending: Bool
+    ) -> [MonitoredProcess] {
         var list = processes
 
         if let cat = categoryFilter {
@@ -115,15 +154,6 @@ final class ProcessMonitor: ObservableObject {
         return list
     }
 
-    func toggleSort(_ column: SortColumn) {
-        if sortColumn == column {
-            sortAscending.toggle()
-        } else {
-            sortColumn = column
-            sortAscending = (column == .name || column == .pid)
-        }
-    }
-
     // MARK: - Kill / Sample
 
     func terminate(pid: Int32, force: Bool = false) {
@@ -134,7 +164,7 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
-    // MARK: - Core refresh（后台采集，避免阻塞侧边栏点击）
+    // MARK: - Core refresh（后台采集，主线程下一帧提交）
 
     func refresh() {
         guard !isSampling else { return }
@@ -150,17 +180,21 @@ final class ProcessMonitor: ObservableObject {
                 classificationCache: classificationCache,
                 usernameCache: usernameCache
             )
-            Task { @MainActor in
-                guard let self else { return }
-                self.processes = snapshot.processes
-                self.summary = snapshot.summary
-                self.previousCPU = snapshot.previousCPU
-                self.classificationCache = snapshot.classificationCache
-                self.usernameCache = snapshot.usernameCache
-                self.lastUpdate = snapshot.timestamp
-                self.isSampling = false
+            DispatchQueue.main.async {
+                self?.applySnapshot(snapshot)
             }
         }
+    }
+
+    private func applySnapshot(_ snapshot: ProcessSampler.Snapshot) {
+        previousCPU = snapshot.previousCPU
+        classificationCache = snapshot.classificationCache
+        usernameCache = snapshot.usernameCache
+        lastUpdate = snapshot.timestamp
+        summary = snapshot.summary
+        processes = snapshot.processes
+        recomputeDisplayed()
+        isSampling = false
     }
 }
 

@@ -141,14 +141,6 @@ struct MonitoredProcess: Identifiable, Hashable {
     var cpuFormatted: String {
         String(format: "%.1f%%", cpuPercent)
     }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(pid)
-    }
-
-    static func == (lhs: MonitoredProcess, rhs: MonitoredProcess) -> Bool {
-        lhs.pid == rhs.pid
-    }
 }
 
 struct ResourceSummary: Equatable {
