@@ -1,6 +1,5 @@
 import Foundation
 import Darwin
-import AppKit
 import Combine
 
 /// 实时采集进程列表与资源占用，并按 Apple / 第三方分类汇总
@@ -27,7 +26,8 @@ final class ProcessMonitor: ObservableObject {
     private var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
     private var classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)] = [:]
     private var usernameCache: [uid_t: String] = [:]
-    private let cpuCount: Double
+    private var isSampling = false
+    private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .userInitiated)
 
     /// 状态栏文案
     var statusText: String {
@@ -38,10 +38,6 @@ final class ProcessMonitor: ObservableObject {
             return "已暂停 · 松开 ⌃ 继续"
         }
         return "实时 · 每 \(Int(refreshInterval)) 秒"
-    }
-
-    init() {
-        cpuCount = Double(ProcessInfo.processInfo.activeProcessorCount)
     }
 
     // MARK: - Lifecycle
@@ -62,7 +58,6 @@ final class ProcessMonitor: ObservableObject {
     func setRefreshPaused(_ paused: Bool) {
         guard isRefreshPaused != paused else { return }
         isRefreshPaused = paused
-        // 松开 Control 后立刻补一次刷新，避免数据过旧
         if !paused, isRunning {
             refresh()
         }
@@ -139,15 +134,68 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
-    // MARK: - Core refresh
+    // MARK: - Core refresh（后台采集，避免阻塞侧边栏点击）
 
     func refresh() {
+        guard !isSampling else { return }
+        isSampling = true
+
+        let previousCPU = self.previousCPU
+        let classificationCache = self.classificationCache
+        let usernameCache = self.usernameCache
+
+        sampleQueue.async { [weak self] in
+            let snapshot = ProcessSampler.collect(
+                previousCPU: previousCPU,
+                classificationCache: classificationCache,
+                usernameCache: usernameCache
+            )
+            Task { @MainActor in
+                guard let self else { return }
+                self.processes = snapshot.processes
+                self.summary = snapshot.summary
+                self.previousCPU = snapshot.previousCPU
+                self.classificationCache = snapshot.classificationCache
+                self.usernameCache = snapshot.usernameCache
+                self.lastUpdate = snapshot.timestamp
+                self.isSampling = false
+            }
+        }
+    }
+}
+
+// MARK: - Background sampler
+
+private enum ProcessSampler {
+    struct Snapshot {
+        var processes: [MonitoredProcess]
+        var summary: ResourceSummary
+        var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)]
+        var classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)]
+        var usernameCache: [uid_t: String]
+        var timestamp: Date
+    }
+
+    static func collect(
+        previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)],
+        classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)],
+        usernameCache: [uid_t: String]
+    ) -> Snapshot {
         let now = Date()
         let wallNow = ProcessInfo.processInfo.systemUptime
 
         var pids = [Int32](repeating: 0, count: 4096)
         let count = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, Int32(MemoryLayout<Int32>.size * pids.count))
-        guard count > 0 else { return }
+        guard count > 0 else {
+            return Snapshot(
+                processes: [],
+                summary: ResourceSummary(),
+                previousCPU: previousCPU,
+                classificationCache: classificationCache,
+                usernameCache: usernameCache,
+                timestamp: now
+            )
+        }
 
         let pidCount = Int(count) / MemoryLayout<Int32>.size
         var result: [MonitoredProcess] = []
@@ -155,6 +203,8 @@ final class ProcessMonitor: ObservableObject {
         var newSummary = ResourceSummary()
         var seen: Set<Int32> = []
         var newPrev: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
+        var newClassCache = classificationCache
+        var newUserCache = usernameCache
 
         for i in 0..<pidCount {
             let pid = pids[i]
@@ -164,14 +214,13 @@ final class ProcessMonitor: ObservableObject {
             guard let info = taskInfo(for: pid) else { continue }
 
             let path = processPath(pid: pid)
-            let name = processName(pid: pid, path: path, fallback: info.name)
+            let name = processName(path: path, fallback: info.name)
 
-            let cached = classificationCache[pid]
             let bid: String?
             let category: ProcessCategory
             let kind: ProcessKind
 
-            if let c = cached, c.path == path {
+            if let c = newClassCache[pid], c.path == path {
                 bid = c.bid
                 category = c.category
                 kind = c.kind
@@ -181,17 +230,17 @@ final class ProcessMonitor: ObservableObject {
                 bid = resolvedBID
                 category = classified.0
                 kind = classified.1
-                classificationCache[pid] = (path, category, kind, bid)
+                newClassCache[pid] = (path, category, kind, bid)
             }
 
-            let (utime, stime) = cpuTimes(for: pid, taskInfo: info)
+            let utime = info.userTime
+            let stime = info.systemTime
             let cpu: Double
             if let prev = previousCPU[pid] {
                 let dUser = utime - prev.utime
                 let dSys = stime - prev.stime
                 let dWall = wallNow - prev.wall
                 if dWall > 0 {
-                    // 与活动监视器一致：总和可超过 100%（多核）
                     cpu = max(0, (dUser + dSys) / dWall * 100.0)
                 } else {
                     cpu = 0
@@ -201,8 +250,7 @@ final class ProcessMonitor: ObservableObject {
             }
             newPrev[pid] = (utime, stime, wallNow)
 
-            let username = username(for: info.uid)
-            let start = startTime(for: pid)
+            let user = username(for: info.uid, cache: &newUserCache)
 
             let process = MonitoredProcess(
                 pid: pid,
@@ -219,24 +267,24 @@ final class ProcessMonitor: ObservableObject {
                 systemTime: stime,
                 ppid: info.ppid,
                 uid: info.uid,
-                username: username,
-                startTime: start
+                username: user,
+                startTime: info.startTime
             )
             result.append(process)
             newSummary.add(process)
         }
 
-        // 清理已退出进程缓存
-        let live = seen
-        classificationCache = classificationCache.filter { live.contains($0.key) }
-        previousCPU = newPrev
+        newClassCache = newClassCache.filter { seen.contains($0.key) }
 
-        processes = result
-        summary = newSummary
-        lastUpdate = now
+        return Snapshot(
+            processes: result,
+            summary: newSummary,
+            previousCPU: newPrev,
+            classificationCache: newClassCache,
+            usernameCache: newUserCache,
+            timestamp: now
+        )
     }
-
-    // MARK: - Low-level process info
 
     private struct RawTaskInfo {
         var name: String
@@ -247,9 +295,10 @@ final class ProcessMonitor: ObservableObject {
         var uid: uid_t
         var userTime: Double
         var systemTime: Double
+        var startTime: Date?
     }
 
-    private func taskInfo(for pid: Int32) -> RawTaskInfo? {
+    private static func taskInfo(for pid: Int32) -> RawTaskInfo? {
         var bsdInfo = proc_bsdinfo()
         let bsdSize = Int32(MemoryLayout<proc_bsdinfo>.stride)
         let bsdResult = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsdInfo, bsdSize)
@@ -269,17 +318,19 @@ final class ProcessMonitor: ObservableObject {
             resident = taskInfo.pti_resident_size
             virtual = taskInfo.pti_virtual_size
             threads = Int(taskInfo.pti_threadnum)
-            // pti_total_user / pti_total_system 单位为纳秒（绝对时间）
             userT = Double(taskInfo.pti_total_user) / 1_000_000_000.0
             sysT = Double(taskInfo.pti_total_system) / 1_000_000_000.0
         }
 
-        // pbi_name 是 CChar 元组
         let name = withUnsafePointer(to: bsdInfo.pbi_name) { ptr in
             ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN) * 2) {
                 String(cString: $0)
             }
         }
+
+        let start: Date?
+        let sec = TimeInterval(bsdInfo.pbi_start_tvsec)
+        start = sec > 0 ? Date(timeIntervalSince1970: sec) : nil
 
         return RawTaskInfo(
             name: name.isEmpty ? "(\(pid))" : name,
@@ -289,15 +340,12 @@ final class ProcessMonitor: ObservableObject {
             ppid: Int32(bsdInfo.pbi_ppid),
             uid: bsdInfo.pbi_uid,
             userTime: userT,
-            systemTime: sysT
+            systemTime: sysT,
+            startTime: start
         )
     }
 
-    private func cpuTimes(for pid: Int32, taskInfo info: RawTaskInfo) -> (Double, Double) {
-        (info.userTime, info.systemTime)
-    }
-
-    private func processPath(pid: Int32) -> String {
+    private static func processPath(pid: Int32) -> String {
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         let ret = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         if ret > 0 {
@@ -306,37 +354,25 @@ final class ProcessMonitor: ObservableObject {
         return ""
     }
 
-    private func processName(pid: Int32, path: String, fallback: String) -> String {
+    private static func processName(path: String, fallback: String) -> String {
         if !path.isEmpty {
             let base = URL(fileURLWithPath: path).lastPathComponent
             if !base.isEmpty { return base }
         }
         if !fallback.isEmpty { return fallback }
-        return "pid-\(pid)"
+        return "unknown"
     }
 
-    private func username(for uid: uid_t) -> String {
-        if let cached = usernameCache[uid] { return cached }
+    private static func username(for uid: uid_t, cache: inout [uid_t: String]) -> String {
+        if let cached = cache[uid] { return cached }
         if let pw = getpwuid(uid), let name = pw.pointee.pw_name {
             let s = String(cString: name)
-            usernameCache[uid] = s
+            cache[uid] = s
             return s
         }
         let s = "\(uid)"
-        usernameCache[uid] = s
+        cache[uid] = s
         return s
-    }
-
-    private func startTime(for pid: Int32) -> Date? {
-        var bsdInfo = proc_bsdinfo()
-        let size = Int32(MemoryLayout<proc_bsdinfo>.stride)
-        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsdInfo, size) == size else {
-            return nil
-        }
-        // pbi_start_tvsec
-        let sec = TimeInterval(bsdInfo.pbi_start_tvsec)
-        if sec <= 0 { return nil }
-        return Date(timeIntervalSince1970: sec)
     }
 }
 
@@ -344,7 +380,6 @@ final class ProcessMonitor: ObservableObject {
 
 import Darwin.sys.sysctl
 
-// proc_info 常量在 libproc 中
 private let PROC_ALL_PIDS: Int32 = 1
 private let PROC_PIDTBSDINFO: Int32 = 3
 private let PROC_PIDTASKINFO: Int32 = 4
@@ -359,7 +394,6 @@ private func proc_pidinfo(_ pid: Int32, _ flavor: Int32, _ arg: UInt64, _ buffer
 @_silgen_name("proc_pidpath")
 private func proc_pidpath(_ pid: Int32, _ buffer: UnsafeMutableRawPointer?, _ buffersize: UInt32) -> Int32
 
-// BSD / task info 结构（与 libproc.h 对齐）
 private struct proc_bsdinfo {
     var pbi_flags: UInt32 = 0
     var pbi_status: UInt32 = 0

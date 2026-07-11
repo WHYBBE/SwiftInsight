@@ -79,14 +79,31 @@ struct SidebarView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
     @Binding var selectedPID: Int32?
 
+    private var selectedFilter: Binding<CategoryFilterItem?> {
+        Binding(
+            get: { CategoryFilterItem.from(category: monitor.categoryFilter) },
+            set: { newValue in
+                // 点击同一项时 SwiftUI 可能传 nil，保持当前筛选
+                let item = newValue ?? .all
+                monitor.categoryFilter = item.category
+            }
+        )
+    }
+
     var body: some View {
-        List {
+        List(selection: selectedFilter) {
             Section("分类") {
-                categoryRow(nil, title: "全部进程", count: monitor.summary.totalCount, symbol: "list.bullet")
-                categoryRow(.appleSystem, title: "Apple 系统", count: monitor.summary.appleSystemCount, symbol: "gearshape.2.fill")
-                categoryRow(.appleApp, title: "Apple 应用", count: monitor.summary.appleAppCount, symbol: "apple.logo")
-                categoryRow(.thirdParty, title: "第三方", count: monitor.summary.thirdPartyCount, symbol: "app.badge")
-                categoryRow(.unknown, title: "未知", count: monitor.summary.unknownCount, symbol: "questionmark.circle")
+                ForEach(CategoryFilterItem.allCases) { item in
+                    HStack {
+                        Label(item.title, systemImage: item.symbolName)
+                        Spacer()
+                        Text("\(count(for: item))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .tag(item)
+                    .contentShape(Rectangle())
+                }
             }
 
             Section("筛选") {
@@ -101,24 +118,15 @@ struct SidebarView: View {
         .navigationTitle("SwiftInsight")
     }
 
-    private func categoryRow(_ category: ProcessCategory?, title: String, count: Int, symbol: String) -> some View {
-        Button {
-            monitor.categoryFilter = category
-        } label: {
-            HStack {
-                Label(title, systemImage: symbol)
-                Spacer()
-                Text("\(count)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+    private func count(for item: CategoryFilterItem) -> Int {
+        let s = monitor.summary
+        switch item {
+        case .all: return s.totalCount
+        case .appleSystem: return s.appleSystemCount
+        case .appleApp: return s.appleAppCount
+        case .thirdParty: return s.thirdPartyCount
+        case .unknown: return s.unknownCount
         }
-        .buttonStyle(.plain)
-        .listRowBackground(
-            (monitor.categoryFilter == category)
-                ? Color.accentColor.opacity(0.15)
-                : Color.clear
-        )
     }
 }
 
