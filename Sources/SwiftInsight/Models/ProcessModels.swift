@@ -21,9 +21,9 @@ enum ProcessCategory: String, CaseIterable, Identifiable, Codable {
     var shortName: String {
         switch self {
         case .appleSystem: return "系统"
-        case .appleApp:    return "Apple"
-        case .thirdParty:  return "第三方"
-        case .unknown:     return "?"
+        case .appleApp:    return "官方"
+        case .thirdParty:  return "三方"
+        case .unknown:     return "未知"
         }
     }
 

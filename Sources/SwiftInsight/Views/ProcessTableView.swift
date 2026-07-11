@@ -16,13 +16,7 @@ struct ProcessTableView: View {
                     CategoryBadge(category: process.category)
                 }
             }
-            .width(min: 180, ideal: 260)
-
-            TableColumn("类型") { (process: MonitoredProcess) in
-                Text(process.category.displayName)
-                    .foregroundStyle(categoryColor(process.category))
-            }
-            .width(min: 70, ideal: 90)
+            .width(min: 220, ideal: 320)
 
             TableColumn("CPU %") { (process: MonitoredProcess) in
                 Text(process.cpuFormatted)
@@ -140,15 +134,6 @@ struct ProcessTableView: View {
         Divider()
         Button("筛选此分类") {
             monitor.categoryFilter = process.category
-        }
-    }
-
-    private func categoryColor(_ c: ProcessCategory) -> Color {
-        switch c {
-        case .appleSystem: return .blue
-        case .appleApp: return .cyan
-        case .thirdParty: return .orange
-        case .unknown: return .secondary
         }
     }
 

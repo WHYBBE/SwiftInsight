@@ -364,20 +364,25 @@ struct CategoryBadge: View {
     let category: ProcessCategory
 
     var body: some View {
-        Text(category.shortName)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(badgeColor.opacity(0.15), in: Capsule())
-            .foregroundStyle(badgeColor)
+        HStack(spacing: 4) {
+            Circle()
+                .fill(tagColor)
+                .frame(width: 6, height: 6)
+            Text(category.shortName)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(tagColor.opacity(0.10), in: Capsule())
     }
 
-    private var badgeColor: Color {
+    private var tagColor: Color {
         switch category {
-        case .appleSystem: return .blue
-        case .appleApp: return .cyan
-        case .thirdParty: return .orange
-        case .unknown: return .gray
+        case .appleSystem: return Color(red: 0.35, green: 0.55, blue: 0.95)
+        case .appleApp:    return Color(red: 0.25, green: 0.72, blue: 0.78)
+        case .thirdParty:  return Color(red: 0.92, green: 0.55, blue: 0.28)
+        case .unknown:     return Color.secondary
         }
     }
 }
