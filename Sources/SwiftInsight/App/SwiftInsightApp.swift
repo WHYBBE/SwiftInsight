@@ -6,20 +6,22 @@ struct SwiftInsightApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var monitor = ProcessMonitor()
     @StateObject private var controlKeyMonitor = ControlKeyMonitor()
+    @StateObject private var menuBar = MenuBarController()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(monitor)
+                .environmentObject(menuBar)
                 .frame(minWidth: 1180, minHeight: 680)
                 .onAppear {
                     monitor.start()
                     controlKeyMonitor.start(processMonitor: monitor)
+                    // 等窗口/RunLoop 就绪后再挂状态栏
+                    DispatchQueue.main.async {
+                        menuBar.attach(monitor: monitor)
+                    }
                     activateAsRegularApp()
-                }
-                .onDisappear {
-                    controlKeyMonitor.stop()
-                    monitor.stop()
                 }
         }
         .defaultSize(width: 1360, height: 860)
@@ -49,11 +51,22 @@ struct SwiftInsightApp: App {
                     monitor.categoryFilter = .thirdParty
                 }
             }
+            CommandMenu("菜单栏") {
+                ForEach(MenuBarIconMode.allCases) { mode in
+                    Button(mode.displayName) {
+                        menuBar.iconMode = mode
+                    }
+                }
+            }
         }
+
+        // 不使用 MenuBarExtra：在 macOS 27 + 自定义 label 下锚定异常
+        // 菜单栏由 MenuBarController / NSStatusItem 负责
 
         Settings {
             SettingsView()
                 .environmentObject(monitor)
+                .environmentObject(menuBar)
         }
     }
 

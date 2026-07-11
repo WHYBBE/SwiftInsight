@@ -10,7 +10,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        // 确保主窗口成为 key window
         DispatchQueue.main.async {
             if let window = NSApp.windows.first {
                 window.makeKeyAndOrderFront(nil)
@@ -19,8 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 关闭主窗口后保留菜单栏
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

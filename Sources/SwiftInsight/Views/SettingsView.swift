@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
+    @EnvironmentObject private var menuBar: MenuBarController
 
     var body: some View {
         Form {
@@ -17,6 +18,17 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Text("按住 Control 键时界面停止自动刷新，便于查看与选择进程；松开后立即恢复并刷新一次。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("菜单栏") {
+                Picker("图标模式", selection: $menuBar.iconMode) {
+                    ForEach(MenuBarIconMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                Text("状态栏显示 CPU / 内存迷你条；点击弹出精简面板。关闭主窗口后仍保留菜单栏。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -60,7 +72,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 560)
+        .frame(width: 560, height: 600)
         .onAppear { monitor.refreshHelperStatus() }
     }
 
@@ -75,7 +87,6 @@ struct SettingsView: View {
     }
 
     private var projectHint: String {
-        // 尽量给出可复制路径；SPM 运行时可能不在源码目录
         FileManager.default.currentDirectoryPath
     }
 }
