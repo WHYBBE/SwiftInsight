@@ -339,10 +339,18 @@ final class ProcessMonitor: ObservableObject {
         let appleApp = processes.filter { $0.category == .appleApp }
 
         return CategoryRankings(
-            thirdPartyByCPU: top(third, by: \.cpuPercent) { String(format: "%.1f%%", $0.cpuPercent) },
-            thirdPartyByMemory: top(third, by: { Double($0.memoryBytes) }) { $0.memoryFormatted },
-            appleSystemByCPU: top(appleSys, by: \.cpuPercent) { String(format: "%.1f%%", $0.cpuPercent) },
-            appleAppByCPU: top(appleApp, by: \.cpuPercent) { String(format: "%.1f%%", $0.cpuPercent) }
+            thirdPartyByCPU: top(third, by: { $0.cpuAvailable ? $0.cpuPercent : -1 }) {
+                $0.cpuAvailable ? String(format: "%.1f%%", $0.cpuPercent) : "N/A"
+            },
+            thirdPartyByMemory: top(third, by: { $0.memoryAvailable ? Double($0.memoryBytes) : -1 }) {
+                $0.memoryFormatted
+            },
+            appleSystemByCPU: top(appleSys, by: { $0.cpuAvailable ? $0.cpuPercent : -1 }) {
+                $0.cpuAvailable ? String(format: "%.1f%%", $0.cpuPercent) : "N/A"
+            },
+            appleAppByCPU: top(appleApp, by: { $0.cpuAvailable ? $0.cpuPercent : -1 }) {
+                $0.cpuAvailable ? String(format: "%.1f%%", $0.cpuPercent) : "N/A"
+            }
         )
     }
 }
@@ -422,7 +430,11 @@ private enum ProcessSampler {
             let utime = info.userTime
             let stime = info.systemTime
             let cpu: Double
-            if let prev = previousCPU[pid] {
+            let cpuAvailable: Bool
+            if !info.metricsAvailable {
+                cpu = 0
+                cpuAvailable = false
+            } else if let prev = previousCPU[pid] {
                 let dUser = utime - prev.utime
                 let dSys = stime - prev.stime
                 let dWall = wallNow - prev.wall
@@ -431,10 +443,15 @@ private enum ProcessSampler {
                 } else {
                     cpu = 0
                 }
+                cpuAvailable = true
             } else {
+                // 首帧尚无差分，显示 0.0%（已采到时间基线，不是权限失败）
                 cpu = 0
+                cpuAvailable = true
             }
-            newPrev[pid] = (utime, stime, wallNow)
+            if info.metricsAvailable {
+                newPrev[pid] = (utime, stime, wallNow)
+            }
 
             let user = username(for: info.uid, cache: &newUserCache)
 
@@ -454,7 +471,9 @@ private enum ProcessSampler {
                 ppid: info.ppid,
                 uid: info.uid,
                 username: user,
-                startTime: info.startTime
+                startTime: info.startTime,
+                cpuAvailable: cpuAvailable,
+                memoryAvailable: info.metricsAvailable
             )
             result.append(process)
             newSummary.add(process)
@@ -483,6 +502,8 @@ private enum ProcessSampler {
         var userTime: Double
         var systemTime: Double
         var startTime: Date?
+        /// PROC_PIDTASKINFO 是否成功（失败时 CPU/内存不可用）
+        var metricsAvailable: Bool
     }
 
     private static func taskInfo(for pid: Int32) -> RawTaskInfo? {
@@ -530,7 +551,7 @@ private enum ProcessSampler {
         var threads = 0
         var userT: Double = 0
         var sysT: Double = 0
-        var hasTaskInfo = false
+        var metricsAvailable = false
 
         var taskInfo = proc_taskinfo()
         let taskSize = Int32(MemoryLayout<proc_taskinfo>.stride)
@@ -540,15 +561,14 @@ private enum ProcessSampler {
             threads = Int(taskInfo.pti_threadnum)
             userT = Double(taskInfo.pti_total_user) / 1_000_000_000.0
             sysT = Double(taskInfo.pti_total_system) / 1_000_000_000.0
-            hasTaskInfo = true
+            metricsAvailable = true
         }
 
-        // 受限进程常读不到 taskinfo；0 线程对存活进程不正确
-        if !hasTaskInfo || threads <= 0 {
+        // 受限进程常读不到 taskinfo；线程数尽量回退，CPU/内存标为不可用
+        if !metricsAvailable || threads <= 0 {
             if let listed = listThreadCount(for: pid), listed > 0 {
                 threads = listed
             } else if threads <= 0 {
-                // 已拿到身份信息说明进程仍存活，至少有 1 条线程
                 threads = 1
             }
         }
@@ -562,7 +582,8 @@ private enum ProcessSampler {
             uid: uid,
             userTime: userT,
             systemTime: sysT,
-            startTime: start
+            startTime: start,
+            metricsAvailable: metricsAvailable
         )
     }
 

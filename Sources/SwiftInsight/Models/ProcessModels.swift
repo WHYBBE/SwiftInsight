@@ -129,17 +129,22 @@ struct MonitoredProcess: Identifiable, Hashable {
     var username: String
     /// 启动时间
     var startTime: Date?
+    /// taskinfo 可读时为 true；权限不足时 CPU/内存显示 N/A
+    var cpuAvailable: Bool
+    var memoryAvailable: Bool
 
     var memoryMB: Double {
         Double(memoryBytes) / 1_048_576.0
     }
 
     var memoryFormatted: String {
-        ByteCountFormatter.string(fromByteCount: Int64(memoryBytes), countStyle: .memory)
+        memoryAvailable
+            ? ByteCountFormatter.string(fromByteCount: Int64(memoryBytes), countStyle: .memory)
+            : "N/A"
     }
 
     var cpuFormatted: String {
-        String(format: "%.1f%%", cpuPercent)
+        cpuAvailable ? String(format: "%.1f%%", cpuPercent) : "N/A"
     }
 }
 
@@ -178,20 +183,20 @@ struct ResourceSummary: Equatable {
     mutating func add(_ process: MonitoredProcess) {
         switch process.category {
         case .appleSystem:
-            appleSystemCPU += process.cpuPercent
-            appleSystemMemory += process.memoryBytes
+            if process.cpuAvailable { appleSystemCPU += process.cpuPercent }
+            if process.memoryAvailable { appleSystemMemory += process.memoryBytes }
             appleSystemCount += 1
         case .appleApp:
-            appleAppCPU += process.cpuPercent
-            appleAppMemory += process.memoryBytes
+            if process.cpuAvailable { appleAppCPU += process.cpuPercent }
+            if process.memoryAvailable { appleAppMemory += process.memoryBytes }
             appleAppCount += 1
         case .thirdParty:
-            thirdPartyCPU += process.cpuPercent
-            thirdPartyMemory += process.memoryBytes
+            if process.cpuAvailable { thirdPartyCPU += process.cpuPercent }
+            if process.memoryAvailable { thirdPartyMemory += process.memoryBytes }
             thirdPartyCount += 1
         case .unknown:
-            unknownCPU += process.cpuPercent
-            unknownMemory += process.memoryBytes
+            if process.cpuAvailable { unknownCPU += process.cpuPercent }
+            if process.memoryAvailable { unknownMemory += process.memoryBytes }
             unknownCount += 1
         }
     }

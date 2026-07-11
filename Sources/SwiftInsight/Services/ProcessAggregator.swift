@@ -18,6 +18,9 @@ enum ProcessAggregator {
             p.cpuPercent = totalCPU
             p.memoryBytes = totalMemory
             p.threadCount = totalThreads
+            // 聚合后视为可用（已对可用子进程求和）
+            p.cpuAvailable = true
+            p.memoryAvailable = true
             return p
         }
     }
@@ -195,8 +198,8 @@ enum ProcessAggregator {
 
     private static func finalize(_ node: Node) -> Node {
         var n = node
-        var cpu = n.process.cpuPercent
-        var mem = n.process.memoryBytes
+        var cpu = n.process.cpuAvailable ? n.process.cpuPercent : 0
+        var mem = n.process.memoryAvailable ? n.process.memoryBytes : 0
         var thr = n.process.threadCount
         var count = 1
         var finalizedChildren: [Node] = []

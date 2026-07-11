@@ -24,8 +24,14 @@ final class MetricsHistoryStore {
         trimSystem(now: now)
 
         if let pid = watchedPID, let proc = processes.first(where: { $0.pid == pid }) {
+            // 权限读不到时不写入历史，避免画出假的 0 曲线
+            guard proc.cpuAvailable || proc.memoryAvailable else { return }
             var list = processSamples[pid] ?? []
-            list.append(MetricSample(date: now, cpu: proc.cpuPercent, memoryBytes: proc.memoryBytes))
+            list.append(MetricSample(
+                date: now,
+                cpu: proc.cpuAvailable ? proc.cpuPercent : 0,
+                memoryBytes: proc.memoryAvailable ? proc.memoryBytes : 0
+            ))
             processSamples[pid] = trim(list, now: now)
         }
 

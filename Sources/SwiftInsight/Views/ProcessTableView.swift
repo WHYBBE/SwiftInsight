@@ -242,7 +242,7 @@ private struct ProcessNSTable: NSViewRepresentable {
                     id: id,
                     text: process.cpuFormatted,
                     alignment: .right,
-                    color: cpuColor(process.cpuPercent)
+                    color: process.cpuAvailable ? cpuColor(process.cpuPercent) : .tertiaryLabelColor
                 )
             case "memory":
                 return textCell(
@@ -250,7 +250,7 @@ private struct ProcessNSTable: NSViewRepresentable {
                     id: id,
                     text: process.memoryFormatted,
                     alignment: .right,
-                    color: .labelColor
+                    color: process.memoryAvailable ? .labelColor : .tertiaryLabelColor
                 )
             case "threads":
                 return textCell(
@@ -396,6 +396,8 @@ private struct ProcessNSTable: NSViewRepresentable {
                     || x.process.name != y.process.name
                     || abs(x.process.cpuPercent - y.process.cpuPercent) > 0.05
                     || x.process.memoryBytes != y.process.memoryBytes
+                    || x.process.cpuAvailable != y.process.cpuAvailable
+                    || x.process.memoryAvailable != y.process.memoryAvailable
                     || x.process.threadCount != y.process.threadCount
                     || x.process.username != y.process.username
                     || x.process.category != y.process.category {

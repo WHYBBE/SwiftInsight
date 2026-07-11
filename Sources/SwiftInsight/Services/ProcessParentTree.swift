@@ -13,11 +13,11 @@ enum ProcessParentTree {
         }
 
         var totalCPU: Double {
-            process.cpuPercent + children.reduce(0) { $0 + $1.totalCPU }
+            (process.cpuAvailable ? process.cpuPercent : 0) + children.reduce(0) { $0 + $1.totalCPU }
         }
 
         var totalMemory: UInt64 {
-            process.memoryBytes + children.reduce(0) { $0 + $1.totalMemory }
+            (process.memoryAvailable ? process.memoryBytes : 0) + children.reduce(0) { $0 + $1.totalMemory }
         }
 
         var totalThreads: Int {
@@ -116,6 +116,8 @@ enum ProcessParentTree {
             display.cpuPercent = node.totalCPU
             display.memoryBytes = node.totalMemory
             display.threadCount = node.totalThreads
+            display.cpuAvailable = true
+            display.memoryAvailable = true
         }
 
         rows.append(ProcessDisplayRow(
