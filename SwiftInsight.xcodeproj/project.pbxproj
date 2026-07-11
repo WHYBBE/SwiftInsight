@@ -22,6 +22,7 @@
 		8DCB595E555B26F7C7AE0440 /* SwiftInsightApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E85304F9E81CF35C5A869C09 /* SwiftInsightApp.swift */; };
 		94F76B2F13DC9F7FB8C87B38 /* MenuBarModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6BEFE8837ECA5AD541C4127 /* MenuBarModels.swift */; };
 		A5857934D2B1A4D92856A001 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 022B9F013BFF33144B99673F /* AppPreferences.swift */; };
+		C4366C19F7C97A379BDE9F4D /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39B9DEF21CF28D94EFF38A4 /* AboutView.swift */; };
 		C4963F9689C39F50AF38FABE /* ProcessTreeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FBBF03CF060A1386E3D38A /* ProcessTreeModels.swift */; };
 		D79CE0EA7A86C7C446E3DA09 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC15AC7DAA9195BA6C32F75 /* AppDelegate.swift */; };
 		DFE0D3EA33F1F861CBC31492 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E1D514C7BD03AB83AFA54D0 /* main.swift */; };
@@ -61,6 +62,7 @@
 		A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BF06292ECE6463D7C5ED65E2 /* SystemOverviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemOverviewViews.swift; sourceTree = "<group>"; };
 		CD907D42EBC669C695C7F3B8 /* HistoryChartsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryChartsView.swift; sourceTree = "<group>"; };
+		E39B9DEF21CF28D94EFF38A4 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		E85304F9E81CF35C5A869C09 /* SwiftInsightApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftInsightApp.swift; sourceTree = "<group>"; };
 		F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlKeyMonitor.swift; sourceTree = "<group>"; };
 		FC71ACF22310115BAC6B19AA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -163,6 +165,7 @@
 		B8F9601FB61E3C5C5EAC9CFB /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				E39B9DEF21CF28D94EFF38A4 /* AboutView.swift */,
 				A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */,
 				CD907D42EBC669C695C7F3B8 /* HistoryChartsView.swift */,
 				87498E0FF669121EBEC4EFB0 /* MenuBarCompactView.swift */,
@@ -274,6 +277,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C4366C19F7C97A379BDE9F4D /* AboutView.swift in Sources */,
 				D79CE0EA7A86C7C446E3DA09 /* AppDelegate.swift in Sources */,
 				A5857934D2B1A4D92856A001 /* AppPreferences.swift in Sources */,
 				3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */,
@@ -374,7 +378,7 @@
 					"@executable_path",
 				);
 				MACH_O_TYPE = mh_execute;
-				PRODUCT_BUNDLE_IDENTIFIER = local.swiftinsight.helper;
+				PRODUCT_BUNDLE_IDENTIFIER = me.whynbnb.SwiftInsight.helper;
 				PRODUCT_NAME = SwiftInsightHelper;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -387,6 +391,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = NO;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -400,7 +405,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = local.swiftinsight.app;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = me.whynbnb.SwiftInsight;
 				PRODUCT_MODULE_NAME = SwiftInsight;
 				PRODUCT_NAME = SwiftInsight;
 				SDKROOT = macosx;
@@ -481,6 +487,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = NO;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -494,7 +501,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = local.swiftinsight.app;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = me.whynbnb.SwiftInsight;
 				PRODUCT_MODULE_NAME = SwiftInsight;
 				PRODUCT_NAME = SwiftInsight;
 				SDKROOT = macosx;
@@ -512,7 +520,7 @@
 					"@executable_path",
 				);
 				MACH_O_TYPE = mh_execute;
-				PRODUCT_BUNDLE_IDENTIFIER = local.swiftinsight.helper;
+				PRODUCT_BUNDLE_IDENTIFIER = me.whynbnb.SwiftInsight.helper;
 				PRODUCT_NAME = SwiftInsightHelper;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;

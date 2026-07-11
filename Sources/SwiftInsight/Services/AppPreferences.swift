@@ -250,6 +250,10 @@ enum L10n {
         "settings.app": "应用",
         "settings.purpose": "用途",
         "settings.purpose.value": "活动监视器替代 · 侧重 Apple / 第三方资源对比",
+        "settings.version": "版本",
+        "settings.bundle_id": "包名",
+        "settings.repository": "仓库",
+        "settings.license": "开源协议",
 
         // Main window
         "search.prompt": "搜索名称、PID、路径、Bundle ID…",
@@ -316,6 +320,7 @@ enum L10n {
         "cmd.only_app": "仅 Apple 应用",
         "cmd.only_third": "仅第三方",
         "cmd.menubar": "菜单栏",
+        "cmd.about": "关于 SwiftInsight",
 
         // Menu bar panel
         "mb.open_main": "打开主窗口",
@@ -444,6 +449,10 @@ enum L10n {
         "settings.app": "App",
         "settings.purpose": "Purpose",
         "settings.purpose.value": "Activity Monitor alternative · Apple vs third-party focus",
+        "settings.version": "Version",
+        "settings.bundle_id": "Bundle ID",
+        "settings.repository": "Repository",
+        "settings.license": "License",
 
         "search.prompt": "Search name, PID, path, Bundle ID…",
         "toolbar.view": "View",
@@ -508,6 +517,7 @@ enum L10n {
         "cmd.only_app": "Apple Apps only",
         "cmd.only_third": "Third-Party only",
         "cmd.menubar": "Menu Bar",
+        "cmd.about": "About SwiftInsight",
 
         "mb.open_main": "Open Main Window",
         "mb.quit_app": "Quit SwiftInsight",

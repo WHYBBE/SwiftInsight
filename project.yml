@@ -5,7 +5,7 @@
 
 name: SwiftInsight
 options:
-  bundleIdPrefix: local.swiftinsight
+  bundleIdPrefix: me.whynbnb
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -35,8 +35,11 @@ targets:
     settings:
       base:
         PRODUCT_NAME: SwiftInsight
-        PRODUCT_BUNDLE_IDENTIFIER: local.swiftinsight.app
+        PRODUCT_BUNDLE_IDENTIFIER: me.whynbnb.SwiftInsight
         PRODUCT_MODULE_NAME: SwiftInsight
+        MARKETING_VERSION: "1.0"
+
+        CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_KEY_CFBundleDisplayName: SwiftInsight
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
@@ -69,7 +72,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: SwiftInsightHelper
-        PRODUCT_BUNDLE_IDENTIFIER: local.swiftinsight.helper
+        PRODUCT_BUNDLE_IDENTIFIER: me.whynbnb.SwiftInsight.helper
         GENERATE_INFOPLIST_FILE: YES
         SKIP_INSTALL: YES
         MACH_O_TYPE: mh_execute

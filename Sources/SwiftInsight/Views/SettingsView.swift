@@ -86,14 +86,9 @@ struct SettingsView: View {
                 Label(L("settings.classification.third"), systemImage: "app.badge")
                     .font(.callout)
             }
-
-            Section(L("settings.about")) {
-                LabeledContent(L("settings.app"), value: "SwiftInsight")
-                LabeledContent(L("settings.purpose"), value: L("settings.purpose.value"))
-            }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 680)
+        .frame(width: 560, height: 600)
         .id(prefs.language)
         .onAppear { monitor.refreshHelperStatus() }
     }

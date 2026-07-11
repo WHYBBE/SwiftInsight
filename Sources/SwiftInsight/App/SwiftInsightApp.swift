@@ -40,6 +40,11 @@ struct SwiftInsightApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button(L("cmd.about")) {
+                    openAboutWindow()
+                }
+            }
             CommandGroup(replacing: .newItem) {}
             CommandMenu(L("cmd.process")) {
                 Button(L("cmd.refresh")) {
@@ -84,5 +89,29 @@ struct SwiftInsightApp: App {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
+    }
+
+    private func openAboutWindow() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let existing = NSApp.windows.first(where: { $0.identifier?.rawValue == "about-swiftinsight" }) {
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let view = AboutView()
+            .environmentObject(prefs)
+            .id(prefs.language)
+        let hosting = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: hosting)
+        window.identifier = NSUserInterfaceItemIdentifier("about-swiftinsight")
+        window.title = L("cmd.about")
+        window.styleMask = NSWindow.StyleMask([.titled, .closable, .fullSizeContentView])
+        window.titlebarAppearsTransparent = true
+        window.setContentSize(NSSize(width: 400, height: 360))
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.makeKeyAndOrderFront(nil)
     }
 }
