@@ -9,16 +9,18 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(selectedPID: $selectedPID)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
         } detail: {
             VStack(spacing: 0) {
+                SystemOverviewBar()
+                Divider()
                 SummaryBarView()
                 Divider()
                 ProcessTableView(selectedPID: $selectedPID)
                 if let pid = selectedPID,
                    let process = monitor.processes.first(where: { $0.pid == pid }) {
                     Divider()
-                    ProcessDetailBar(
+                    ProcessDetailPanel(
                         process: process,
                         onTerminate: {
                             terminateForce = false
@@ -33,6 +35,9 @@ struct ContentView: View {
             }
         }
         .searchable(text: $monitor.filterText, prompt: "搜索名称、PID、路径、Bundle ID…")
+        .onChange(of: selectedPID) { _, pid in
+            monitor.inspectedPID = pid
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Picker("视图", selection: $monitor.displayMode) {
@@ -120,6 +125,13 @@ struct SidebarView: View {
 
             Section("资源占用对比") {
                 ResourceBreakdownView()
+            }
+
+            Section("谁在吃资源") {
+                CategoryRankingsView { pid in
+                    selectedPID = pid
+                    monitor.inspectedPID = pid
+                }
             }
         }
         .listStyle(.sidebar)

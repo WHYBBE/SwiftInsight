@@ -12,6 +12,9 @@ final class ProcessMonitor: ObservableObject {
     /// 树形/列表统一展示行
     @Published private(set) var displayRows: [ProcessDisplayRow] = []
     @Published private(set) var summary = ResourceSummary()
+    @Published private(set) var systemMetrics = SystemMetrics()
+    @Published private(set) var rankings = CategoryRankings()
+    @Published private(set) var selectedDetail = ProcessDetailInfo()
     @Published private(set) var lastUpdate: Date = .distantPast
     @Published private(set) var isRunning = false
     /// 按住 Control 时为 true，自动刷新暂停
@@ -41,6 +44,10 @@ final class ProcessMonitor: ObservableObject {
     }
     /// 展开的聚合节点 key
     @Published private(set) var expandedGroups: Set<String> = []
+    /// 当前选中 PID（用于详情增强）
+    @Published var inspectedPID: Int32? = nil {
+        didSet { refreshInspectedDetail() }
+    }
 
     private var timer: Timer?
     private var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
@@ -65,6 +72,10 @@ final class ProcessMonitor: ObservableObject {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        // 预热系统指标基线，避免首帧 CPU 无差分
+        sampleQueue.async {
+            _ = SystemMetricsCollector.sample()
+        }
         refresh()
         restartTimer()
     }
@@ -253,8 +264,47 @@ final class ProcessMonitor: ObservableObject {
         lastUpdate = snapshot.timestamp
         summary = snapshot.summary
         processes = snapshot.processes
+        systemMetrics = snapshot.systemMetrics
+        rankings = Self.buildRankings(from: snapshot.processes)
         recomputeDisplayed()
+        refreshInspectedDetail()
         isSampling = false
+    }
+
+    private func refreshInspectedDetail() {
+        guard let pid = inspectedPID else {
+            selectedDetail = ProcessDetailInfo()
+            return
+        }
+        // 打开文件扫描较重，放到后台
+        let all = processes
+        sampleQueue.async { [weak self] in
+            let detail = ProcessInspector.inspect(pid: pid, processes: all)
+            DispatchQueue.main.async {
+                guard let self, self.inspectedPID == pid else { return }
+                self.selectedDetail = detail
+            }
+        }
+    }
+
+    private static func buildRankings(from processes: [MonitoredProcess], limit: Int = 5) -> CategoryRankings {
+        func top(_ list: [MonitoredProcess], by key: (MonitoredProcess) -> Double, label: (MonitoredProcess) -> String) -> [ProcessRankingItem] {
+            list.sorted { key($0) > key($1) }
+                .prefix(limit)
+                .filter { key($0) > 0.01 || $0.memoryBytes > 1_048_576 }
+                .map { ProcessRankingItem(process: $0, metricLabel: label($0)) }
+        }
+
+        let third = processes.filter { $0.category == .thirdParty }
+        let appleSys = processes.filter { $0.category == .appleSystem }
+        let appleApp = processes.filter { $0.category == .appleApp }
+
+        return CategoryRankings(
+            thirdPartyByCPU: top(third, by: \.cpuPercent) { String(format: "%.1f%%", $0.cpuPercent) },
+            thirdPartyByMemory: top(third, by: { Double($0.memoryBytes) }) { $0.memoryFormatted },
+            appleSystemByCPU: top(appleSys, by: \.cpuPercent) { String(format: "%.1f%%", $0.cpuPercent) },
+            appleAppByCPU: top(appleApp, by: \.cpuPercent) { String(format: "%.1f%%", $0.cpuPercent) }
+        )
     }
 }
 
@@ -267,6 +317,7 @@ private enum ProcessSampler {
         var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)]
         var classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)]
         var usernameCache: [uid_t: String]
+        var systemMetrics: SystemMetrics
         var timestamp: Date
     }
 
@@ -277,6 +328,7 @@ private enum ProcessSampler {
     ) -> Snapshot {
         let now = Date()
         let wallNow = ProcessInfo.processInfo.systemUptime
+        let systemMetrics = SystemMetricsCollector.sample()
 
         var pids = [Int32](repeating: 0, count: 4096)
         let count = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, Int32(MemoryLayout<Int32>.size * pids.count))
@@ -287,6 +339,7 @@ private enum ProcessSampler {
                 previousCPU: previousCPU,
                 classificationCache: classificationCache,
                 usernameCache: usernameCache,
+                systemMetrics: systemMetrics,
                 timestamp: now
             )
         }
@@ -376,6 +429,7 @@ private enum ProcessSampler {
             previousCPU: newPrev,
             classificationCache: newClassCache,
             usernameCache: newUserCache,
+            systemMetrics: systemMetrics,
             timestamp: now
         )
     }
