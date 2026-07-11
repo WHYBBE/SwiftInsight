@@ -175,26 +175,21 @@ private struct ProcessNSTable: NSViewRepresentable {
         }
 
         func apply(rows: [ProcessDisplayRow], selectedPID: Int32?) {
-            guard !isApplying else { return }
-
+            // 始终采用最新快照，避免 isApplying 期间丢弃有数据的更新
             let dataChanged = !Self.sameDisplayData(self.rows, rows)
             let selectionChanged = selectedPID != currentSelectedPID()
-
             guard dataChanged || selectionChanged else { return }
 
-            isApplying = true
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let table = self.tableView else {
-                    self?.isApplying = false
-                    return
-                }
+            self.rows = rows
+
+            let applyBlock = { [weak self] in
+                guard let self, let table = self.tableView else { return }
 
                 let savedSelection = selectedPID
                 let clip = self.scrollView?.contentView
                 let savedOrigin = clip?.bounds.origin
 
                 if dataChanged {
-                    self.rows = rows
                     table.reloadData()
                 }
 
@@ -211,6 +206,14 @@ private struct ProcessNSTable: NSViewRepresentable {
                 }
 
                 self.isApplying = false
+            }
+
+            if Thread.isMainThread {
+                isApplying = true
+                applyBlock()
+            } else {
+                isApplying = true
+                DispatchQueue.main.async(execute: applyBlock)
             }
         }
 

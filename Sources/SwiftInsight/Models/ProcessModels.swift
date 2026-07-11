@@ -41,13 +41,12 @@ enum ProcessCategory: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-/// 侧边栏分类筛选项（含「全部」）
+/// 侧边栏分类筛选项（含「全部」；不展示「未知」）
 enum CategoryFilterItem: String, CaseIterable, Identifiable, Hashable {
     case all
     case appleSystem
     case appleApp
     case thirdParty
-    case unknown
 
     var id: String { rawValue }
 
@@ -57,7 +56,6 @@ enum CategoryFilterItem: String, CaseIterable, Identifiable, Hashable {
         case .appleSystem: return .appleSystem
         case .appleApp: return .appleApp
         case .thirdParty: return .thirdParty
-        case .unknown: return .unknown
         }
     }
 
@@ -67,7 +65,6 @@ enum CategoryFilterItem: String, CaseIterable, Identifiable, Hashable {
         case .appleSystem: return ProcessCategory.appleSystem.displayName
         case .appleApp: return ProcessCategory.appleApp.displayName
         case .thirdParty: return ProcessCategory.thirdParty.displayName
-        case .unknown: return ProcessCategory.unknown.displayName
         }
     }
 
@@ -77,7 +74,6 @@ enum CategoryFilterItem: String, CaseIterable, Identifiable, Hashable {
         case .appleSystem: return ProcessCategory.appleSystem.symbolName
         case .appleApp: return ProcessCategory.appleApp.symbolName
         case .thirdParty: return ProcessCategory.thirdParty.symbolName
-        case .unknown: return ProcessCategory.unknown.symbolName
         }
     }
 
@@ -87,7 +83,7 @@ enum CategoryFilterItem: String, CaseIterable, Identifiable, Hashable {
         case .appleSystem: return .appleSystem
         case .appleApp: return .appleApp
         case .thirdParty: return .thirdParty
-        case .unknown: return .unknown
+        case .unknown: return .all
         }
     }
 }

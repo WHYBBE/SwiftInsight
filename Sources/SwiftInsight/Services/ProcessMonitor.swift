@@ -85,6 +85,11 @@ final class ProcessMonitor: ObservableObject {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        // 未知分类已从 UI 移除；若仍挂着旧筛选会看起来像「没数据」
+        if categoryFilter == .unknown {
+            categoryFilter = nil
+        }
+        isRefreshPaused = false
         refreshHelperStatus()
         // 预热系统指标基线，避免首帧 CPU 无差分
         sampleQueue.async {
@@ -312,6 +317,8 @@ final class ProcessMonitor: ObservableObject {
         recomputeDisplayed()
         refreshInspectedDetail()
         isSampling = false
+        // 确保 SwiftUI / NSViewRepresentable 一定收到本帧变更
+        objectWillChange.send()
     }
 
     private func publishHistory() {

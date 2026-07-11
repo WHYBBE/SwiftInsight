@@ -464,7 +464,6 @@ final class MenuBarPanelView: NSView {
             (.systemBlue, s.appleSystemCPU),
             (.systemTeal, s.appleAppCPU),
             (.systemOrange, s.thirdPartyCPU),
-            (.systemGray, s.unknownCPU),
         ])
         sysLegend.attributedStringValue = legend("系统", s.appleSystemCPU, .systemBlue)
         appLegend.attributedStringValue = legend("官方", s.appleAppCPU, .systemTeal)

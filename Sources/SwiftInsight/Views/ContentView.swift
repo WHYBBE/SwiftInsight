@@ -147,7 +147,6 @@ struct SidebarView: View {
         case .appleSystem: return s.appleSystemCount
         case .appleApp: return s.appleAppCount
         case .thirdParty: return s.thirdPartyCount
-        case .unknown: return s.unknownCount
         }
     }
 }
@@ -168,9 +167,8 @@ struct ResourceBreakdownView: View {
                     (.blue, s.appleSystemCPU),
                     (.cyan, s.appleAppCPU),
                     (.orange, s.thirdPartyCPU),
-                    (.gray, s.unknownCPU),
                 ],
-                total: max(s.totalCPU, 1)
+                total: max(s.appleSystemCPU + s.appleAppCPU + s.thirdPartyCPU, 1)
             )
             legendRow(color: .blue, title: "系统", value: String(format: "%.1f%%", s.appleSystemCPU))
             legendRow(color: .cyan, title: "Apple 应用", value: String(format: "%.1f%%", s.appleAppCPU))
@@ -186,9 +184,8 @@ struct ResourceBreakdownView: View {
                     (.blue, Double(s.appleSystemMemory)),
                     (.cyan, Double(s.appleAppMemory)),
                     (.orange, Double(s.thirdPartyMemory)),
-                    (.gray, Double(s.unknownMemory)),
                 ],
-                total: max(Double(s.totalMemory), 1)
+                total: max(Double(s.appleSystemMemory + s.appleAppMemory + s.thirdPartyMemory), 1)
             )
             legendRow(color: .blue, title: "系统", value: byteString(s.appleSystemMemory))
             legendRow(color: .cyan, title: "Apple 应用", value: byteString(s.appleAppMemory))
