@@ -12,6 +12,13 @@ struct SettingsView: View {
                     Text("5 秒").tag(5.0)
                     Text("10 秒").tag(10.0)
                 }
+                LabeledContent("暂停刷新") {
+                    Text("按住 ⌃ Control")
+                        .foregroundStyle(.secondary)
+                }
+                Text("按住 Control 键时界面停止自动刷新，便于查看与选择进程；松开后立即恢复并刷新一次。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("关于分类") {
@@ -32,6 +39,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 360)
+        .frame(width: 480, height: 400)
     }
 }

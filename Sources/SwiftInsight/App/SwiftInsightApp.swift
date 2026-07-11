@@ -5,6 +5,7 @@ import AppKit
 struct SwiftInsightApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var monitor = ProcessMonitor()
+    @StateObject private var controlKeyMonitor = ControlKeyMonitor()
 
     var body: some Scene {
         WindowGroup {
@@ -13,9 +14,13 @@ struct SwiftInsightApp: App {
                 .frame(minWidth: 1180, minHeight: 680)
                 .onAppear {
                     monitor.start()
+                    controlKeyMonitor.start(processMonitor: monitor)
                     activateAsRegularApp()
                 }
-                .onDisappear { monitor.stop() }
+                .onDisappear {
+                    controlKeyMonitor.stop()
+                    monitor.stop()
+                }
         }
         .defaultSize(width: 1360, height: 860)
         .windowStyle(.titleBar)

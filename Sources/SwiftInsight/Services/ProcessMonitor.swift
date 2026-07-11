@@ -11,6 +11,8 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var summary = ResourceSummary()
     @Published private(set) var lastUpdate: Date = .distantPast
     @Published private(set) var isRunning = false
+    /// 按住 Control 时为 true，自动刷新暂停
+    @Published private(set) var isRefreshPaused = false
     @Published var refreshInterval: TimeInterval = 2.0 {
         didSet { restartTimer() }
     }
@@ -26,6 +28,17 @@ final class ProcessMonitor: ObservableObject {
     private var classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)] = [:]
     private var usernameCache: [uid_t: String] = [:]
     private let cpuCount: Double
+
+    /// 状态栏文案
+    var statusText: String {
+        if !isRunning {
+            return "已停止"
+        }
+        if isRefreshPaused {
+            return "已暂停 · 松开 ⌃ 继续"
+        }
+        return "实时 · 每 \(Int(refreshInterval)) 秒"
+    }
 
     init() {
         cpuCount = Double(ProcessInfo.processInfo.activeProcessorCount)
@@ -46,12 +59,22 @@ final class ProcessMonitor: ObservableObject {
         timer = nil
     }
 
+    func setRefreshPaused(_ paused: Bool) {
+        guard isRefreshPaused != paused else { return }
+        isRefreshPaused = paused
+        // 松开 Control 后立刻补一次刷新，避免数据过旧
+        if !paused, isRunning {
+            refresh()
+        }
+    }
+
     private func restartTimer() {
         timer?.invalidate()
         guard isRunning else { return }
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh()
+                guard let self, self.isRunning, !self.isRefreshPaused else { return }
+                self.refresh()
             }
         }
         if let timer {

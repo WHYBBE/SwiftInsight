@@ -42,6 +42,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(width: 80)
+                .disabled(monitor.isRefreshPaused)
 
                 Button {
                     monitor.refresh()
@@ -49,6 +50,7 @@ struct ContentView: View {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .help("立即刷新")
+                .disabled(monitor.isRefreshPaused)
             }
         }
         .alert(
@@ -217,12 +219,33 @@ struct ResourceBreakdownView: View {
 
 // MARK: - Summary bar
 
+/// 刷新状态指示（汇总栏右侧）
+struct RefreshStatusView: View {
+    @EnvironmentObject private var monitor: ProcessMonitor
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: monitor.isRefreshPaused ? "pause.circle.fill" : "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(monitor.isRefreshPaused ? Color.orange : Color.green)
+                .symbolRenderingMode(.hierarchical)
+            Text(monitor.statusText)
+                .font(.caption)
+                .foregroundStyle(monitor.isRefreshPaused ? Color.primary : Color.secondary)
+                .monospacedDigit()
+        }
+        .help(monitor.isRefreshPaused ? "按住 Control 暂停刷新中" : "按住 Control 可暂停自动刷新")
+        .animation(.easeInOut(duration: 0.15), value: monitor.isRefreshPaused)
+        .accessibilityLabel(monitor.statusText)
+    }
+}
+
 struct SummaryBarView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
 
     var body: some View {
         let s = monitor.summary
-        HStack(spacing: 20) {
+        HStack(spacing: 16) {
             summaryChip(
                 title: "Apple 系统",
                 cpu: s.appleSystemCPU,
@@ -244,25 +267,31 @@ struct SummaryBarView: View {
                 count: s.thirdPartyCount,
                 color: .orange
             )
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("共 \(s.totalCount) 个进程")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(monitor.lastUpdate, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                RefreshStatusView()
+                HStack(spacing: 8) {
+                    Text("共 \(s.totalCount) 个进程")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    if monitor.lastUpdate != .distantPast {
+                        Text("更新于 \(monitor.lastUpdate, style: .time)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.bar)
+        .animation(.easeInOut(duration: 0.15), value: monitor.isRefreshPaused)
     }
 
     private func summaryChip(title: String, cpu: Double, memory: UInt64, count: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
-                Circle().fill(color).frame(width: 6, height: 6)
+                Circle().fill(color.gradient).frame(width: 6, height: 6)
                 Text(title)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -282,7 +311,10 @@ struct SummaryBarView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(color.opacity(0.08))
+        }
     }
 }
 
@@ -344,7 +376,6 @@ struct ProcessDetailBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.bar)
     }
 
     private func detailStat(_ title: String, _ value: String) -> some View {
@@ -367,14 +398,12 @@ struct CategoryBadge: View {
         HStack(spacing: 4) {
             Circle()
                 .fill(tagColor)
-                .frame(width: 6, height: 6)
+                .frame(width: 5, height: 5)
             Text(category.shortName)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(tagColor.opacity(0.10), in: Capsule())
+        .accessibilityLabel(category.displayName)
     }
 
     private var tagColor: Color {
