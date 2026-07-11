@@ -309,28 +309,16 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     private func showContextMenu() {
+        closePanel()
         let menu = NSMenu()
-        for mode in MenuBarIconMode.allCases {
-            let item = NSMenuItem(title: mode.displayName, action: #selector(setIconMode(_:)), keyEquivalent: "")
-            item.representedObject = mode.rawValue
-            item.state = iconMode == mode ? .on : .off
-            item.target = self
-            menu.addItem(item)
-        }
-        menu.addItem(.separator())
         let open = NSMenuItem(title: "打开主窗口", action: #selector(openMainFromMenu), keyEquivalent: "o")
         open.target = self
         menu.addItem(open)
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "退出 SwiftInsight", action: #selector(quitFromMenu), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
-
-    @objc private func setIconMode(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let mode = MenuBarIconMode(rawValue: raw) else { return }
-        iconMode = mode
     }
 
     @objc private func openMainFromMenu() { openMainWindow() }
