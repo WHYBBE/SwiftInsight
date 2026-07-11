@@ -3,16 +3,21 @@ import AppKit
 
 @main
 struct SwiftInsightApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var monitor = ProcessMonitor()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(monitor)
-                .frame(minWidth: 900, minHeight: 560)
-                .onAppear { monitor.start() }
+                .frame(minWidth: 1180, minHeight: 680)
+                .onAppear {
+                    monitor.start()
+                    activateAsRegularApp()
+                }
                 .onDisappear { monitor.stop() }
         }
+        .defaultSize(width: 1360, height: 860)
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .commands {
@@ -45,5 +50,11 @@ struct SwiftInsightApp: App {
             SettingsView()
                 .environmentObject(monitor)
         }
+    }
+
+    private func activateAsRegularApp() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first?.makeKeyAndOrderFront(nil)
     }
 }

@@ -9,7 +9,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(selectedPID: $selectedPID)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
         } detail: {
             VStack(spacing: 0) {
                 SummaryBarView()
