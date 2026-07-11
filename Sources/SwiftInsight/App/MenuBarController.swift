@@ -28,7 +28,7 @@ final class MenuBarController: NSObject, ObservableObject {
     private var otherAppObserver: NSObjectProtocol?
 
     private static let modeKey = "menuBarIconMode"
-    private let contentSize = NSSize(width: 320, height: 360)
+    private let contentSize = NSSize(width: 360, height: 545)
     private let panelGap: CGFloat = 4
 
     override init() {
@@ -360,16 +360,35 @@ final class MenuBarPanelView: NSView {
     private let background = NSVisualEffectView()
     private let stroke = NSView()
 
-    private let cpuCard = MetricCardView(title: "CPU")
-    private let memCard = MetricCardView(title: "内存")
-    private let swapCard = MetricCardView(title: "交换")
+    // 内存
+    private let memSection = RoundedSectionView()
+    private let pressureRing = RingGaugeView()
+    private let memoryRing = MultiSegmentRingView()
+    private let memLegendStack = NSStackView()
 
+    // CPU
+    private let cpuSection = RoundedSectionView()
+    private let cpuTitleLabel = makeLabel("CPU", size: 12, color: .systemBlue, weight: .semibold)
+    private let cpuMetaLabel = makeLabel("", size: 11, color: .secondaryLabelColor)
+    private let coreDots = CoreDotsView()
+    private let eCoreLegend = makeLabel("", size: 11, color: .labelColor)
+    private let pCoreLegend = makeLabel("", size: 11, color: .labelColor)
+    private let userSysLegend = makeLabel("", size: 11, color: .labelColor)
+
+    // 构成
     private let compositionTitle = makeLabel("构成", size: 11, color: .secondaryLabelColor, weight: .semibold)
-    private let compositionBar = CompositionBarView()
-    private let sysLegend = makeLabel("", size: 11, color: .labelColor)
-    private let appLegend = makeLabel("", size: 11, color: .labelColor)
-    private let thirdLegend = makeLabel("", size: 11, color: .labelColor)
+    private let cpuCompLabel = makeLabel("CPU", size: 10, color: .secondaryLabelColor, weight: .medium)
+    private let memCompLabel = makeLabel("内存", size: 10, color: .secondaryLabelColor, weight: .medium)
+    private let cpuCompositionBar = CompositionBarView()
+    private let memCompositionBar = CompositionBarView()
+    private let cpuSysLegend = makeLabel("", size: 10, color: .labelColor)
+    private let cpuAppLegend = makeLabel("", size: 10, color: .labelColor)
+    private let cpuThirdLegend = makeLabel("", size: 10, color: .labelColor)
+    private let memSysLegend = makeLabel("", size: 10, color: .labelColor)
+    private let memAppLegend = makeLabel("", size: 10, color: .labelColor)
+    private let memThirdLegend = makeLabel("", size: 10, color: .labelColor)
 
+    // 高占用
     private let topsTitle = makeLabel("高占用", size: 11, color: .secondaryLabelColor, weight: .semibold)
     private let cpuTopHeader = makeLabel("CPU", size: 10, color: .secondaryLabelColor, weight: .medium)
     private let memTopHeader = makeLabel("内存", size: 10, color: .secondaryLabelColor, weight: .medium)
@@ -379,6 +398,13 @@ final class MenuBarPanelView: NSView {
     private let openButton = NSButton(title: "完整窗口", target: nil, action: nil)
     private let quitButton = NSButton(title: "退出", target: nil, action: nil)
 
+    private let memLegendRows: [LegendRowView] = [
+        LegendRowView(color: MenuBarPalette.appMem, title: "App"),
+        LegendRowView(color: MenuBarPalette.wired, title: "联动"),
+        LegendRowView(color: MenuBarPalette.compressed, title: "压缩"),
+        LegendRowView(color: MenuBarPalette.available, title: "可用"),
+    ]
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -387,22 +413,43 @@ final class MenuBarPanelView: NSView {
         background.blendingMode = .behindWindow
         background.state = .active
         background.wantsLayer = true
-        background.layer?.cornerRadius = 12
+        background.layer?.cornerRadius = 14
         background.layer?.masksToBounds = true
         addSubview(background)
 
         stroke.wantsLayer = true
-        stroke.layer?.cornerRadius = 12
+        stroke.layer?.cornerRadius = 14
         stroke.layer?.borderWidth = 1
         stroke.layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
         addSubview(stroke)
 
-        let children: [NSView] = [
-            cpuCard, memCard, swapCard,
-            compositionTitle, compositionBar, sysLegend, appLegend, thirdLegend,
+        addSubview(memSection)
+        memSection.addSubview(pressureRing)
+        memSection.addSubview(memoryRing)
+        memLegendStack.orientation = .vertical
+        memLegendStack.alignment = .width
+        memLegendStack.spacing = 6
+        memLegendStack.distribution = .fillEqually
+        memLegendRows.forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            memLegendStack.addArrangedSubview($0)
+        }
+        memSection.addSubview(memLegendStack)
+
+
+        addSubview(cpuSection)
+        [cpuTitleLabel, cpuMetaLabel, coreDots, eCoreLegend, pCoreLegend, userSysLegend].forEach {
+            cpuSection.addSubview($0)
+        }
+
+        let rest: [NSView] = [
+            compositionTitle, cpuCompLabel, memCompLabel,
+            cpuCompositionBar, memCompositionBar,
+            cpuSysLegend, cpuAppLegend, cpuThirdLegend,
+            memSysLegend, memAppLegend, memThirdLegend,
             topsTitle, cpuTopHeader, memTopHeader,
         ] + cpuTopRows + memTopRows + [openButton, quitButton]
-        children.forEach { addSubview($0) }
+        rest.forEach { addSubview($0) }
 
         openButton.bezelStyle = .rounded
         openButton.target = self
@@ -413,54 +460,107 @@ final class MenuBarPanelView: NSView {
         quitButton.target = self
         quitButton.action = #selector(quit)
         quitButton.controlSize = .small
+
+        pressureRing.lineWidth = 7
+        memoryRing.lineWidth = 7
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 320, height: 360) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 360, height: 545) }
 
     func reload(from monitor: ProcessMonitor) {
         let m = monitor.systemMetrics
         let s = monitor.summary
 
-        cpuCard.configure(
-            value: String(format: "%.0f%%", m.cpuUsed),
-            detail: String(format: "用户 %.0f  系统 %.0f", m.cpuUser, m.cpuSystem),
-            level: m.cpuUsed
-        )
-        memCard.configure(
-            value: String(format: "%.0f%%", m.memoryUsedPercent),
-            detail: ByteCountFormatter.string(fromByteCount: Int64(m.usedMemory), countStyle: .memory),
-            level: m.memoryUsedPercent
-        )
-        let swapLevel: Double
-        if m.swapTotal > 0 {
-            swapLevel = min(100, Double(m.swapUsed) / Double(m.swapTotal) * 100)
-        } else {
-            swapLevel = m.swapUsed > 0 ? 30 : 0
-        }
-        let swapTotal = m.swapTotal > 0
-            ? ByteCountFormatter.string(fromByteCount: Int64(m.swapTotal), countStyle: .memory)
-            : "—"
-        swapCard.configure(
-            value: ByteCountFormatter.string(fromByteCount: Int64(m.swapUsed), countStyle: .memory),
-            detail: m.swapUsed > 0 ? "共 \(swapTotal)" : "未使用",
-            level: swapLevel
+        // 压力环
+        pressureRing.configure(
+            percent: m.memoryPressure,
+            title: "PRESSURE",
+            color: MenuBarPalette.pressure
         )
 
-        compositionBar.setSegments([
+        // 内存多段环：App / 联动 / 压缩 / 可用
+        let phys = max(1, Double(m.physicalMemory))
+        let app = Double(m.appMemory)
+        let wired = Double(m.wiredMemory)
+        let comp = Double(m.compressedMemory)
+        let usedSum = app + wired + comp
+        let availSeg = max(0, phys - usedSum)
+        memoryRing.configure(
+            segments: [
+                (MenuBarPalette.appMem, app / phys),
+                (MenuBarPalette.wired, wired / phys),
+                (MenuBarPalette.compressed, comp / phys),
+                (MenuBarPalette.available, availSeg / phys),
+            ],
+            centerPercent: m.memoryUsedPercent,
+            centerTitle: "内存"
+        )
+
+        memLegendRows[0].setValue(byteString(m.appMemory))
+        memLegendRows[1].setValue(byteString(m.wiredMemory))
+        memLegendRows[2].setValue(byteString(m.compressedMemory))
+        memLegendRows[3].setValue(byteString(m.availableMemory))
+
+        // CPU
+        cpuMetaLabel.stringValue = String(format: "%.0f%% · %d 核", m.cpuUsed, max(m.processorCount, m.coreUsages.count))
+        let eCount = m.efficiencyCoreCount
+        let pCount = m.performanceCoreCount
+        coreDots.configure(
+            usages: m.coreUsages,
+            efficiencyCount: eCount,
+            performanceCount: pCount
+        )
+        eCoreLegend.attributedStringValue = legend("能效", m.efficiencyCoreUsage, MenuBarPalette.eCore)
+        pCoreLegend.attributedStringValue = legend("性能", m.performanceCoreUsage, MenuBarPalette.pCore)
+        userSysLegend.attributedStringValue = dualLegend(
+            ("用户", m.cpuUser, MenuBarPalette.userCPU),
+            ("系统", m.cpuSystem, MenuBarPalette.systemCPU)
+        )
+
+        // 构成：CPU 相对 100%；内存相对物理内存
+        cpuCompositionBar.setSegments([
             (.systemBlue, s.appleSystemCPU),
             (.systemTeal, s.appleAppCPU),
             (.systemOrange, s.thirdPartyCPU),
-        ])
-        sysLegend.attributedStringValue = legend("系统", s.appleSystemCPU, .systemBlue)
-        appLegend.attributedStringValue = legend("官方", s.appleAppCPU, .systemTeal)
-        thirdLegend.attributedStringValue = legend("三方", s.thirdPartyCPU, .systemOrange)
+        ], scale: 100)
+        cpuSysLegend.attributedStringValue = legend("系统", s.appleSystemCPU, .systemBlue, decimals: 1)
+        cpuAppLegend.attributedStringValue = legend("官方", s.appleAppCPU, .systemTeal, decimals: 1)
+        cpuThirdLegend.attributedStringValue = legend("三方", s.thirdPartyCPU, .systemOrange, decimals: 1)
+
+        let memScale = max(phys, 1)
+        memCompositionBar.setSegments([
+            (.systemBlue, Double(s.appleSystemMemory) / memScale * 100),
+            (.systemTeal, Double(s.appleAppMemory) / memScale * 100),
+            (.systemOrange, Double(s.thirdPartyMemory) / memScale * 100),
+        ], scale: 100)
+        memSysLegend.attributedStringValue = legendBytes("系统", s.appleSystemMemory, .systemBlue)
+        memAppLegend.attributedStringValue = legendBytes("官方", s.appleAppMemory, .systemTeal)
+        memThirdLegend.attributedStringValue = legendBytes("三方", s.thirdPartyMemory, .systemOrange)
 
         fillTop(rows: cpuTopRows, items: Array(monitor.rankings.thirdPartyByCPU.prefix(3)))
         fillTop(rows: memTopRows, items: Array(monitor.rankings.thirdPartyByMemory.prefix(3)))
         needsLayout = true
     }
+
+    private func byteString(_ bytes: UInt64) -> String {
+        let gb = Double(bytes) / (1024 * 1024 * 1024)
+        if gb >= 1 {
+            return String(format: "%5.2f GB", gb)
+        }
+        let mb = Double(bytes) / (1024 * 1024)
+        return String(format: "%5.1f MB", mb)
+    }
+
+    private func shortByte(_ bytes: UInt64) -> String {
+        let gb = Double(bytes) / (1024 * 1024 * 1024)
+        if gb >= 1 { return String(format: "%.1fG", gb) }
+        let mb = Double(bytes) / (1024 * 1024)
+        if mb >= 1 { return String(format: "%.0fM", mb) }
+        return String(format: "%.0fK", Double(bytes) / 1024)
+    }
+
 
     private func fillTop(rows: [TopRowView], items: [ProcessRankingItem]) {
         for (i, row) in rows.enumerated() {
@@ -480,29 +580,70 @@ final class MenuBarPanelView: NSView {
         background.frame = b.insetBy(dx: 1, dy: 1)
         stroke.frame = b.insetBy(dx: 1, dy: 1)
 
-        let inset: CGFloat = 14
-        let gap: CGFloat = 8
-        let cardW = (b.width - inset * 2 - gap * 2) / 3
-        let cardH: CGFloat = 78
-        let topY = b.height - inset - cardH
+        let inset: CGFloat = 12
+        let btnH: CGFloat = 26
+        let btnArea: CGFloat = btnH + 16
+        var y = b.height - inset
 
-        cpuCard.frame = NSRect(x: inset, y: topY, width: cardW, height: cardH)
-        memCard.frame = NSRect(x: inset + cardW + gap, y: topY, width: cardW, height: cardH)
-        swapCard.frame = NSRect(x: inset + (cardW + gap) * 2, y: topY, width: cardW, height: cardH)
+        // 内存区：环在上、图例在右（加宽后完整显示）
+        let memH: CGFloat = 132
+        y -= memH
+        memSection.frame = NSRect(x: inset, y: y, width: b.width - inset * 2, height: memH)
+        let ringSize: CGFloat = 86
+        let ringY = (memH - ringSize) / 2
+        let ringPad: CGFloat = 12
+        pressureRing.frame = NSRect(x: ringPad, y: ringY, width: ringSize, height: ringSize)
+        memoryRing.frame = NSRect(x: ringPad + ringSize + 10, y: ringY, width: ringSize, height: ringSize)
+        let legendX = ringPad + ringSize * 2 + 22
+        let legendW = max(100, memSection.bounds.width - legendX - 10)
+        memLegendStack.frame = NSRect(x: legendX, y: 16, width: legendW, height: memH - 32)
+        // 强制每行同宽，数值列对齐
+        for row in memLegendRows {
+            row.frame.size.width = legendW
+        }
 
-        var y = topY - 18
+
+        y -= 10
+        // CPU 区
+        let cpuH: CGFloat = 112
+        y -= cpuH
+        cpuSection.frame = NSRect(x: inset, y: y, width: b.width - inset * 2, height: cpuH)
+        cpuTitleLabel.frame = NSRect(x: 12, y: cpuH - 24, width: 40, height: 16)
+        cpuMetaLabel.frame = NSRect(x: 52, y: cpuH - 24, width: cpuSection.bounds.width - 64, height: 16)
+        cpuMetaLabel.alignment = .right
+        coreDots.frame = NSRect(x: 10, y: 44, width: cpuSection.bounds.width - 20, height: 30)
+        let half = (cpuSection.bounds.width - 24) / 2
+        eCoreLegend.frame = NSRect(x: 12, y: 24, width: half, height: 14)
+        pCoreLegend.frame = NSRect(x: 12 + half, y: 24, width: half, height: 14)
+        userSysLegend.frame = NSRect(x: 12, y: 8, width: cpuSection.bounds.width - 24, height: 14)
+
+        y -= 16
         compositionTitle.frame = NSRect(x: inset, y: y - 13, width: 80, height: 14)
-        y -= 22
-        compositionBar.frame = NSRect(x: inset, y: y - 8, width: b.width - inset * 2, height: 7)
-        y -= 20
-        let legendW = (b.width - inset * 2) / 3
-        sysLegend.frame = NSRect(x: inset, y: y - 13, width: legendW, height: 14)
-        appLegend.frame = NSRect(x: inset + legendW, y: y - 13, width: legendW, height: 14)
-        thirdLegend.frame = NSRect(x: inset + legendW * 2, y: y - 13, width: legendW, height: 14)
+        y -= 18
 
-        y -= 28
+        // CPU 构成
+        cpuCompLabel.frame = NSRect(x: inset, y: y - 11, width: 36, height: 12)
+        y -= 14
+        cpuCompositionBar.frame = NSRect(x: inset, y: y - 7, width: b.width - inset * 2, height: 6)
+        y -= 14
+        let legendColW = (b.width - inset * 2) / 3
+        cpuSysLegend.frame = NSRect(x: inset, y: y - 12, width: legendColW, height: 13)
+        cpuAppLegend.frame = NSRect(x: inset + legendColW, y: y - 12, width: legendColW, height: 13)
+        cpuThirdLegend.frame = NSRect(x: inset + legendColW * 2, y: y - 12, width: legendColW, height: 13)
+        y -= 18
+
+        // 内存构成
+        memCompLabel.frame = NSRect(x: inset, y: y - 11, width: 36, height: 12)
+        y -= 14
+        memCompositionBar.frame = NSRect(x: inset, y: y - 7, width: b.width - inset * 2, height: 6)
+        y -= 14
+        memSysLegend.frame = NSRect(x: inset, y: y - 12, width: legendColW, height: 13)
+        memAppLegend.frame = NSRect(x: inset + legendColW, y: y - 12, width: legendColW, height: 13)
+        memThirdLegend.frame = NSRect(x: inset + legendColW * 2, y: y - 12, width: legendColW, height: 13)
+
+        y -= 22
         topsTitle.frame = NSRect(x: inset, y: y - 13, width: 80, height: 14)
-        y -= 20
+        y -= 16
 
         let colGap: CGFloat = 12
         let colW = (b.width - inset * 2 - colGap) / 2
@@ -510,42 +651,80 @@ final class MenuBarPanelView: NSView {
         let rightX = inset + colW + colGap
         cpuTopHeader.frame = NSRect(x: leftX, y: y - 12, width: colW, height: 13)
         memTopHeader.frame = NSRect(x: rightX, y: y - 12, width: colW, height: 13)
-        y -= 18
+        y -= 16
 
+        // 高占用与按钮之间留足空隙
+        let topsBottom = btnArea + 4
+        let rowH: CGFloat = 17
         for i in 0..<3 {
-            let rowY = y - 16
+            let rowY = y - rowH
+            if rowY < topsBottom { break }
             if !cpuTopRows[i].isHidden {
                 cpuTopRows[i].frame = NSRect(x: leftX, y: rowY, width: colW, height: 16)
             }
             if !memTopRows[i].isHidden {
                 memTopRows[i].frame = NSRect(x: rightX, y: rowY, width: colW, height: 16)
             }
-            y -= 20
+            y -= 19
         }
 
-        let btnY = inset
+        let btnY: CGFloat = 10
         let quitW: CGFloat = 56
-        openButton.frame = NSRect(x: inset, y: btnY, width: b.width - inset * 2 - quitW - 8, height: 24)
-        quitButton.frame = NSRect(x: b.width - inset - quitW, y: btnY, width: quitW, height: 24)
+        openButton.frame = NSRect(x: inset, y: btnY, width: b.width - inset * 2 - quitW - 8, height: btnH)
+        quitButton.frame = NSRect(x: b.width - inset - quitW, y: btnY, width: quitW, height: btnH)
     }
 
     @objc private func openMain() { onOpenMain?() }
     @objc private func quit() { onQuit?() }
 
-    private func legend(_ title: String, _ value: Double, _ color: NSColor) -> NSAttributedString {
+    private func legend(
+        _ title: String,
+        _ value: Double,
+        _ color: NSColor,
+        decimals: Int = 0
+    ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         result.append(NSAttributedString(string: "● ", attributes: [
             .font: NSFont.systemFont(ofSize: 9, weight: .bold),
             .foregroundColor: color,
         ]))
         result.append(NSAttributedString(string: "\(title) ", attributes: [
-            .font: NSFont.systemFont(ofSize: 11),
+            .font: NSFont.systemFont(ofSize: 10),
             .foregroundColor: NSColor.secondaryLabelColor,
         ]))
-        result.append(NSAttributedString(string: String(format: "%.0f%%", value), attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+        let fmt = decimals > 0 ? "%.\(decimals)f%%" : "%.0f%%"
+        result.append(NSAttributedString(string: String(format: fmt, value), attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
             .foregroundColor: NSColor.labelColor,
         ]))
+        return result
+    }
+
+    private func legendBytes(_ title: String, _ bytes: UInt64, _ color: NSColor) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        result.append(NSAttributedString(string: "● ", attributes: [
+            .font: NSFont.systemFont(ofSize: 9, weight: .bold),
+            .foregroundColor: color,
+        ]))
+        result.append(NSAttributedString(string: "\(title) ", attributes: [
+            .font: NSFont.systemFont(ofSize: 10),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]))
+        result.append(NSAttributedString(string: shortByte(bytes), attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
+            .foregroundColor: NSColor.labelColor,
+        ]))
+        return result
+    }
+
+    private func dualLegend(
+        _ a: (String, Double, NSColor),
+        _ b: (String, Double, NSColor)
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        result.append(legend(a.0, a.1, a.2, decimals: 0))
+        result.append(NSAttributedString(string: "    ", attributes: [:]))
+        result.append(legend(b.0, b.1, b.2, decimals: 0))
         return result
     }
 
@@ -561,73 +740,316 @@ final class MenuBarPanelView: NSView {
     }
 }
 
-private final class MetricCardView: NSView {
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let valueLabel = NSTextField(labelWithString: "")
-    private let detailLabel = NSTextField(labelWithString: "")
-    private let barTrack = NSView()
-    private let barFill = NSView()
-    private var level: Double = 0
+// MARK: - Palette
 
-    init(title: String) {
-        super.init(frame: .zero)
+private enum MenuBarPalette {
+    static let pressure = NSColor(calibratedRed: 0.72, green: 0.42, blue: 0.92, alpha: 1)
+    static let appMem = NSColor.systemBlue
+    static let wired = NSColor.systemPink
+    static let compressed = NSColor.systemOrange
+    static let available = NSColor.labelColor.withAlphaComponent(0.28)
+    static let eCore = NSColor.systemPink
+    static let pCore = NSColor.systemBlue
+    static let userCPU = NSColor.systemBlue
+    static let systemCPU = NSColor.systemPink
+}
+
+// MARK: - Section chrome
+
+private final class RoundedSectionView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = 12
         layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.05).cgColor
-        titleLabel.stringValue = title
-        titleLabel.font = .systemFont(ofSize: 10, weight: .medium)
-        titleLabel.textColor = .secondaryLabelColor
-        valueLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
-        valueLabel.lineBreakMode = .byClipping
-        detailLabel.font = .systemFont(ofSize: 10)
-        detailLabel.textColor = .tertiaryLabelColor
-        detailLabel.lineBreakMode = .byTruncatingTail
-        barTrack.wantsLayer = true
-        barTrack.layer?.cornerRadius = 1.5
-        barTrack.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
-        barFill.wantsLayer = true
-        barFill.layer?.cornerRadius = 1.5
-        for tf in [titleLabel, valueLabel, detailLabel] {
-            tf.drawsBackground = false
-            tf.isBezeled = false
-            tf.isEditable = false
-            addSubview(tf)
-        }
-        addSubview(barTrack)
-        barTrack.addSubview(barFill)
     }
+    required init?(coder: NSCoder) { fatalError() }
+}
 
+// MARK: - Single-color ring gauge
+
+private final class RingGaugeView: NSView {
+    var lineWidth: CGFloat = 7
+    private var percent: Double = 0
+    private var title = ""
+    private var color: NSColor = .systemPurple
+    private let percentLabel = NSTextField(labelWithString: "")
+    private let titleLabel = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        percentLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
+        percentLabel.alignment = .center
+        percentLabel.drawsBackground = false
+        percentLabel.isBezeled = false
+        percentLabel.isEditable = false
+        titleLabel.font = .systemFont(ofSize: 8, weight: .semibold)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.alignment = .center
+        titleLabel.drawsBackground = false
+        titleLabel.isBezeled = false
+        titleLabel.isEditable = false
+        addSubview(percentLabel)
+        addSubview(titleLabel)
+    }
     required init?(coder: NSCoder) { fatalError() }
 
-    func configure(value: String, detail: String, level: Double) {
-        valueLabel.stringValue = value
-        detailLabel.stringValue = detail
-        self.level = min(100, max(0, level))
-        let c = color(for: self.level)
-        valueLabel.textColor = c
-        barFill.layer?.backgroundColor = c.withAlphaComponent(0.9).cgColor
+    func configure(percent: Double, title: String, color: NSColor) {
+        self.percent = max(0, min(100, percent))
+        self.title = title
+        self.color = color
+        percentLabel.stringValue = String(format: "%.0f%%", self.percent)
+        percentLabel.textColor = color
+        titleLabel.stringValue = title.uppercased()
+        needsDisplay = true
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let inset: CGFloat = 9
-        titleLabel.frame = NSRect(x: inset, y: bounds.height - 18, width: bounds.width - inset * 2, height: 12)
-        valueLabel.frame = NSRect(x: inset, y: bounds.height - 42, width: bounds.width - inset * 2, height: 22)
-        detailLabel.frame = NSRect(x: inset, y: 16, width: bounds.width - inset * 2, height: 13)
-        barTrack.frame = NSRect(x: inset, y: 8, width: bounds.width - inset * 2, height: 3)
-        barFill.frame = NSRect(x: 0, y: 0, width: max(2, barTrack.bounds.width * CGFloat(level / 100)), height: 3)
+        let midY = bounds.midY
+        percentLabel.frame = NSRect(x: 4, y: midY - 4, width: bounds.width - 8, height: 22)
+        titleLabel.frame = NSRect(x: 4, y: midY - 20, width: bounds.width - 8, height: 12)
     }
 
-    private func color(for level: Double) -> NSColor {
-        if level >= 85 { return .systemRed }
-        if level >= 60 { return .systemOrange }
-        return .labelColor
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let inset = lineWidth / 2 + 1
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+
+        let track = NSBezierPath()
+        track.lineWidth = lineWidth
+        track.lineCapStyle = .round
+        track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
+        NSColor.labelColor.withAlphaComponent(0.12).setStroke()
+        track.stroke()
+
+        let angle = CGFloat(percent / 100) * 360
+        guard angle > 0.5 else { return }
+        let arc = NSBezierPath()
+        arc.lineWidth = lineWidth
+        arc.lineCapStyle = .round
+        // 从顶部顺时针
+        arc.appendArc(withCenter: center, radius: radius, startAngle: 90, endAngle: 90 - angle, clockwise: true)
+        color.setStroke()
+        arc.stroke()
     }
 }
 
+// MARK: - Multi-segment ring
+
+private final class MultiSegmentRingView: NSView {
+    var lineWidth: CGFloat = 7
+    private var segments: [(NSColor, Double)] = []
+    private var centerPercent: Double = 0
+    private var centerTitle = ""
+    private let percentLabel = NSTextField(labelWithString: "")
+    private let titleLabel = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        percentLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
+        percentLabel.alignment = .center
+        percentLabel.drawsBackground = false
+        percentLabel.isBezeled = false
+        percentLabel.isEditable = false
+        titleLabel.font = .systemFont(ofSize: 9, weight: .semibold)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.alignment = .center
+        titleLabel.drawsBackground = false
+        titleLabel.isBezeled = false
+        titleLabel.isEditable = false
+        addSubview(percentLabel)
+        addSubview(titleLabel)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(segments: [(NSColor, Double)], centerPercent: Double, centerTitle: String) {
+        self.segments = segments
+        self.centerPercent = max(0, min(100, centerPercent))
+        self.centerTitle = centerTitle
+        percentLabel.stringValue = String(format: "%.0f%%", self.centerPercent)
+        percentLabel.textColor = .labelColor
+        titleLabel.stringValue = centerTitle
+        needsDisplay = true
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let midY = bounds.midY
+        percentLabel.frame = NSRect(x: 4, y: midY - 4, width: bounds.width - 8, height: 22)
+        titleLabel.frame = NSRect(x: 4, y: midY - 20, width: bounds.width - 8, height: 12)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let inset = lineWidth / 2 + 1
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+
+        let track = NSBezierPath()
+        track.lineWidth = lineWidth
+        track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
+        NSColor.labelColor.withAlphaComponent(0.1).setStroke()
+        track.stroke()
+
+        let total = max(segments.reduce(0) { $0 + max(0, $1.1) }, 0.0001)
+        var start: CGFloat = 90
+        for seg in segments {
+            let fraction = CGFloat(max(0, seg.1) / total)
+            let sweep = fraction * 360
+            guard sweep > 0.3 else {
+                start -= sweep
+                continue
+            }
+            let arc = NSBezierPath()
+            arc.lineWidth = lineWidth
+            arc.lineCapStyle = .butt
+            arc.appendArc(withCenter: center, radius: radius, startAngle: start, endAngle: start - sweep, clockwise: true)
+            seg.0.setStroke()
+            arc.stroke()
+            start -= sweep
+        }
+    }
+}
+
+// MARK: - Core dots
+
+private final class CoreDotsView: NSView {
+    private var usages: [Double] = []
+    private var efficiencyCount = 0
+    private var performanceCount = 0
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(usages: [Double], efficiencyCount: Int, performanceCount: Int) {
+        self.usages = usages
+        self.efficiencyCount = efficiencyCount
+        self.performanceCount = performanceCount
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard !usages.isEmpty else { return }
+        let n = usages.count
+        let maxDot: CGFloat = 22
+        let spacing: CGFloat = 6
+        let totalW = CGFloat(n) * maxDot + CGFloat(max(0, n - 1)) * spacing
+        var startX = (bounds.width - totalW) / 2
+        if startX < 0 { startX = 0 }
+        let scale = totalW > bounds.width
+            ? bounds.width / totalW
+            : 1
+        let dot = maxDot * scale
+        let gap = spacing * scale
+        let midY = bounds.midY
+
+        for (i, usage) in usages.enumerated() {
+            let x = startX + CGFloat(i) * (dot + gap)
+            let isE = efficiencyCount > 0 && i < efficiencyCount
+            let color = isE ? MenuBarPalette.eCore : MenuBarPalette.pCore
+            let rect = NSRect(x: x, y: midY - dot / 2, width: dot, height: dot)
+
+            // 底环
+            let track = NSBezierPath(ovalIn: rect.insetBy(dx: 1.5, dy: 1.5))
+            track.lineWidth = 2.5
+            NSColor.labelColor.withAlphaComponent(0.12).setStroke()
+            track.stroke()
+
+            let angle = CGFloat(max(0, min(100, usage)) / 100) * 360
+            if angle > 1 {
+                let arc = NSBezierPath()
+                arc.lineWidth = 2.5
+                arc.lineCapStyle = .round
+                let c = NSPoint(x: rect.midX, y: rect.midY)
+                let r = (dot - 3) / 2
+                arc.appendArc(withCenter: c, radius: r, startAngle: 90, endAngle: 90 - angle, clockwise: true)
+                color.setStroke()
+                arc.stroke()
+            }
+        }
+    }
+}
+
+// MARK: - Memory legend row
+
+private final class LegendRowView: NSView {
+    private let dot = NSView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let valueLabel = NSTextField(labelWithString: "")
+
+    init(color: NSColor, title: String) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        dot.wantsLayer = true
+        dot.layer?.cornerRadius = 4
+        dot.layer?.backgroundColor = color.cgColor
+        titleLabel.stringValue = title
+        titleLabel.font = .systemFont(ofSize: 11)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.drawsBackground = false
+        titleLabel.isBezeled = false
+        titleLabel.isEditable = false
+        titleLabel.lineBreakMode = .byClipping
+        valueLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        valueLabel.textColor = .labelColor
+        valueLabel.alignment = .right
+        valueLabel.drawsBackground = false
+        valueLabel.isBezeled = false
+        valueLabel.isEditable = false
+        valueLabel.lineBreakMode = .byClipping
+        addSubview(dot)
+        addSubview(titleLabel)
+        addSubview(valueLabel)
+        setContentHuggingPriority(.defaultLow, for: .horizontal)
+        setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func setValue(_ text: String) {
+        valueLabel.stringValue = text
+        needsLayout = true
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 18) }
+
+    override func layout() {
+        super.layout()
+        // 固定右侧数值列，保证四行小数点对齐
+        let valueW: CGFloat = 58
+        let padR: CGFloat = 0
+        dot.frame = NSRect(x: 0, y: (bounds.height - 8) / 2, width: 8, height: 8)
+        valueLabel.frame = NSRect(
+            x: bounds.width - valueW - padR,
+            y: 0,
+            width: valueW,
+            height: bounds.height
+        )
+        titleLabel.frame = NSRect(
+            x: 14,
+            y: 0,
+            width: max(20, bounds.width - valueW - padR - 18),
+            height: bounds.height
+        )
+    }
+}
+
+// MARK: - Composition bar（相对 scale，默认 100%）
+
 private final class CompositionBarView: NSView {
     private var segments: [(NSColor, Double)] = []
+    private var scale: Double = 100
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -636,25 +1058,30 @@ private final class CompositionBarView: NSView {
         layer?.masksToBounds = true
     }
     required init?(coder: NSCoder) { fatalError() }
-    func setSegments(_ segments: [(NSColor, Double)]) {
+    /// value 与 scale 同单位；条宽 = value/scale * width（scale=100 表示 CPU%）
+    func setSegments(_ segments: [(NSColor, Double)], scale: Double = 100) {
         self.segments = segments
+        self.scale = max(scale, 0.0001)
         needsDisplay = true
     }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let total = max(segments.reduce(0) { $0 + max(0, $1.1) }, 0.0001)
         var x: CGFloat = 0
-        for (i, seg) in segments.enumerated() {
-            var width = bounds.width * CGFloat(max(0, seg.1) / total)
-            if i == segments.count - 1 { width = max(0, bounds.width - x) }
+        for seg in segments {
+            let fraction = max(0, min(1, seg.1 / scale))
+            let width = bounds.width * CGFloat(fraction)
             if width > 0.5 {
                 seg.0.setFill()
                 NSBezierPath(rect: NSRect(x: x, y: 0, width: width, height: bounds.height)).fill()
             }
             x += width
+            if x >= bounds.width { break }
         }
     }
 }
+
+
+// MARK: - Top process row
 
 private final class TopRowView: NSView {
     private let indexLabel = NSTextField(labelWithString: "")

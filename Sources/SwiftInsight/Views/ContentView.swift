@@ -168,7 +168,7 @@ struct ResourceBreakdownView: View {
                     (.cyan, s.appleAppCPU),
                     (.orange, s.thirdPartyCPU),
                 ],
-                total: max(s.appleSystemCPU + s.appleAppCPU + s.thirdPartyCPU, 1)
+                total: 100
             )
             legendRow(color: .blue, title: "系统", value: String(format: "%.1f%%", s.appleSystemCPU))
             legendRow(color: .cyan, title: "Apple 应用", value: String(format: "%.1f%%", s.appleAppCPU))
@@ -179,13 +179,14 @@ struct ResourceBreakdownView: View {
             Text("内存")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            let phys = Double(monitor.systemMetrics.physicalMemory)
             stackedBar(
                 segments: [
                     (.blue, Double(s.appleSystemMemory)),
                     (.cyan, Double(s.appleAppMemory)),
                     (.orange, Double(s.thirdPartyMemory)),
                 ],
-                total: max(Double(s.appleSystemMemory + s.appleAppMemory + s.thirdPartyMemory), 1)
+                total: max(phys, 1)
             )
             legendRow(color: .blue, title: "系统", value: byteString(s.appleSystemMemory))
             legendRow(color: .cyan, title: "Apple 应用", value: byteString(s.appleAppMemory))
@@ -214,10 +215,10 @@ struct ResourceBreakdownView: View {
 
     private func stackedBar(segments: [(Color, Double)], total: Double) -> some View {
         let values = segments.map { max(0, $0.1) }
-        let sum = max(values.reduce(0, +), total, 0.0001)
+        // total 为 100（CPU）或物理内存字节；按绝对比例铺色，剩余为空闲底轨
+        let denom = max(total, 0.0001)
 
         return Canvas { context, size in
-            // 背景
             let bg = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2)
             context.fill(bg, with: .color(Color.secondary.opacity(0.15)))
 
@@ -225,18 +226,13 @@ struct ResourceBreakdownView: View {
             let h = size.height
             let w = size.width
             for (index, seg) in segments.enumerated() {
-                let fraction = CGFloat(values[index] / sum)
+                let fraction = CGFloat(min(1, values[index] / denom))
                 guard fraction > 0 else { continue }
-                // 至少 1pt，避免极小分段完全看不见；最后一段吃到右边界，消除舍入缺口
                 var segmentWidth = w * fraction
-                if index == segments.count - 1 {
+                if x + segmentWidth > w {
                     segmentWidth = max(0, w - x)
-                } else {
-                    segmentWidth = max(segmentWidth > 0 ? 1 : 0, floor(segmentWidth))
-                    if x + segmentWidth > w {
-                        segmentWidth = max(0, w - x)
-                    }
                 }
+                if segmentWidth > 0, segmentWidth < 1 { segmentWidth = 1 }
                 guard segmentWidth > 0 else { continue }
                 let rect = CGRect(x: x, y: 0, width: segmentWidth, height: h)
                 context.fill(Path(rect), with: .color(seg.0))

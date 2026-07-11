@@ -6,6 +6,13 @@ struct SystemMetrics: Equatable {
     var cpuIdle: Double = 0
     var cpuNice: Double = 0
 
+    /// 每逻辑核利用率 0–100（顺序：先 E 核再 P 核，若可区分）
+    var coreUsages: [Double] = []
+    var performanceCoreCount: Int = 0
+    var efficiencyCoreCount: Int = 0
+    var performanceCoreUsage: Double = 0
+    var efficiencyCoreUsage: Double = 0
+
     var physicalMemory: UInt64 = 0
     var usedMemory: UInt64 = 0
     var wiredMemory: UInt64 = 0
@@ -15,6 +22,8 @@ struct SystemMetrics: Equatable {
     var freeMemory: UInt64 = 0
     var swapUsed: UInt64 = 0
     var swapTotal: UInt64 = 0
+    /// 内存压力 0–100（越高越紧张）
+    var memoryPressure: Double = 0
 
     var networkInBytesPerSec: Double = 0
     var networkOutBytesPerSec: Double = 0
@@ -30,6 +39,11 @@ struct SystemMetrics: Equatable {
     var memoryUsedPercent: Double {
         guard physicalMemory > 0 else { return 0 }
         return Double(usedMemory) / Double(physicalMemory) * 100
+    }
+    /// 可用 ≈ 空闲 + 文件缓存（展示用）
+    var availableMemory: UInt64 {
+        let sum = freeMemory &+ cachedFiles
+        return min(sum, physicalMemory)
     }
 
     var cpuFormatted: String { String(format: "%.0f%%", cpuUsed) }
@@ -53,6 +67,12 @@ struct SystemMetrics: Equatable {
     }
     var loadFormatted: String {
         String(format: "%.2f  %.2f  %.2f", loadAverage1, loadAverage5, loadAverage15)
+    }
+    var coreSummaryFormatted: String {
+        if performanceCoreCount > 0 || efficiencyCoreCount > 0 {
+            return String(format: "E %.0f%%  P %.0f%%", efficiencyCoreUsage, performanceCoreUsage)
+        }
+        return String(format: "%d 核", processorCount)
     }
 
     private func rateString(_ bytesPerSec: Double) -> String {

@@ -6,23 +6,49 @@ import Darwin
 enum SystemMetricsCollector {
 
     private static var previousCPU: host_cpu_load_info?
+    private static var previousCoreTicks: [[UInt32]]?
     private static var previousNet: (inBytes: UInt64, outBytes: UInt64, time: TimeInterval)?
     private static var previousDisk: (read: UInt64, write: UInt64, time: TimeInterval)?
     /// 上一帧有效 CPU 结果，供首帧/无效差分时回退
     private static var lastValidCPU: (user: Double, system: Double, idle: Double, nice: Double)?
+    private static var lastValidCores: [Double]?
+    private static var cachedPCores: Int?
+    private static var cachedECores: Int?
 
     static func sample() -> SystemMetrics {
         var metrics = SystemMetrics()
         metrics.processorCount = ProcessInfo.processInfo.activeProcessorCount
         metrics.physicalMemory = ProcessInfo.processInfo.physicalMemory
+        fillCoreTopology(&metrics)
 
         fillCPU(&metrics)
-        fillMemory(&metrics)
+        fillPerCoreCPU(&metrics)
         fillSwap(&metrics)
+        fillMemory(&metrics)
         fillLoad(&metrics)
         fillNetwork(&metrics)
         fillDisk(&metrics)
         return metrics
+    }
+
+    // MARK: - Topology (P/E)
+
+    private static func fillCoreTopology(_ metrics: inout SystemMetrics) {
+        if cachedPCores == nil {
+            cachedPCores = sysctlInt("hw.perflevel0.logicalcpu")
+            cachedECores = sysctlInt("hw.perflevel1.logicalcpu")
+        }
+        let p = cachedPCores ?? 0
+        let e = cachedECores ?? 0
+        metrics.performanceCoreCount = max(0, p)
+        metrics.efficiencyCoreCount = max(0, e)
+    }
+
+    private static func sysctlInt(_ name: String) -> Int {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname(name, &value, &size, nil, 0) == 0 else { return 0 }
+        return Int(value)
     }
 
     // MARK: - CPU（差分；首帧不显示 100%）
@@ -41,7 +67,6 @@ enum SystemMetricsCollector {
         }
 
         if let prev = previousCPU {
-            // 无符号环绕减法
             let dUser = Double(cpuInfo.cpu_ticks.0 &- prev.cpu_ticks.0)
             let dSystem = Double(cpuInfo.cpu_ticks.1 &- prev.cpu_ticks.1)
             let dIdle = Double(cpuInfo.cpu_ticks.2 &- prev.cpu_ticks.2)
@@ -57,7 +82,6 @@ enum SystemMetricsCollector {
                 applyLastCPU(&metrics)
             }
         } else {
-            // 首帧：建立基线，不显示 100%。优先回退上次有效值，否则视为空闲。
             if let last = lastValidCPU {
                 metrics.cpuUser = last.user
                 metrics.cpuSystem = last.system
@@ -84,12 +108,91 @@ enum SystemMetricsCollector {
         }
     }
 
+    // MARK: - Per-core CPU
+
+    private static func fillPerCoreCPU(_ metrics: inout SystemMetrics) {
+        var cpuCount: natural_t = 0
+        var infoArray: processor_info_array_t?
+        var infoCount: mach_msg_type_number_t = 0
+        let kr = host_processor_info(
+            mach_host_self(),
+            PROCESSOR_CPU_LOAD_INFO,
+            &cpuCount,
+            &infoArray,
+            &infoCount
+        )
+        guard kr == KERN_SUCCESS, let info = infoArray, cpuCount > 0 else {
+            if let last = lastValidCores {
+                metrics.coreUsages = last
+                applyEPAverages(&metrics)
+            }
+            return
+        }
+        defer {
+            let bytes = vm_size_t(infoCount) * vm_size_t(MemoryLayout<integer_t>.size)
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), bytes)
+        }
+
+        let stride = Int(CPU_STATE_MAX)
+        var ticks: [[UInt32]] = []
+        ticks.reserveCapacity(Int(cpuCount))
+        for i in 0..<Int(cpuCount) {
+            let base = i * stride
+            ticks.append([
+                UInt32(bitPattern: info[base + Int(CPU_STATE_USER)]),
+                UInt32(bitPattern: info[base + Int(CPU_STATE_SYSTEM)]),
+                UInt32(bitPattern: info[base + Int(CPU_STATE_IDLE)]),
+                UInt32(bitPattern: info[base + Int(CPU_STATE_NICE)]),
+            ])
+        }
+
+        var usages = [Double](repeating: 0, count: ticks.count)
+        if let prev = previousCoreTicks, prev.count == ticks.count {
+            for i in 0..<ticks.count {
+                let dU = Double(ticks[i][0] &- prev[i][0])
+                let dS = Double(ticks[i][1] &- prev[i][1])
+                let dI = Double(ticks[i][2] &- prev[i][2])
+                let dN = Double(ticks[i][3] &- prev[i][3])
+                let total = dU + dS + dI + dN
+                if total > 0 {
+                    usages[i] = max(0, min(100, (dU + dS + dN) / total * 100))
+                } else if let last = lastValidCores, i < last.count {
+                    usages[i] = last[i]
+                }
+            }
+        } else if let last = lastValidCores, last.count == ticks.count {
+            usages = last
+        }
+
+        previousCoreTicks = ticks
+        lastValidCores = usages
+        metrics.coreUsages = usages
+        applyEPAverages(&metrics)
+    }
+
+    /// Apple Silicon：核索引通常为 E 核在前、P 核在后
+    private static func applyEPAverages(_ metrics: inout SystemMetrics) {
+        let eCount = metrics.efficiencyCoreCount
+        let pCount = metrics.performanceCoreCount
+        let cores = metrics.coreUsages
+        guard !cores.isEmpty else { return }
+
+        if eCount + pCount == cores.count, eCount > 0 || pCount > 0 {
+            if eCount > 0 {
+                let slice = cores.prefix(eCount)
+                metrics.efficiencyCoreUsage = slice.reduce(0, +) / Double(eCount)
+            }
+            if pCount > 0 {
+                let slice = cores.suffix(pCount)
+                metrics.performanceCoreUsage = slice.reduce(0, +) / Double(pCount)
+            }
+        } else {
+            metrics.efficiencyCoreUsage = 0
+            metrics.performanceCoreUsage = cores.reduce(0, +) / Double(cores.count)
+        }
+    }
+
     // MARK: - Memory（对齐活动监视器常用口径）
-    // App Memory ≈ internal - purgeable
-    // Wired Memory = wire
-    // Compressed = compressor pages
-    // Memory Used ≈ App + Wired + Compressed
-    // Cached Files ≈ external
 
     private static func fillMemory(_ metrics: inout SystemMetrics) {
         var size = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
@@ -116,16 +219,13 @@ enum SystemMetricsCollector {
         let external = UInt64(vmStat.external_page_count) * ps
         let internalPages = UInt64(vmStat.internal_page_count) * ps
 
-        // 应用内存：内部页减去可清除页（活动监视器 App Memory 近似）
         let appMemory: UInt64
         if internalPages >= purgeable {
             appMemory = internalPages - purgeable
         } else {
-            // 旧系统无 internal 字段时的回退
             appMemory = active + inactive + speculative
         }
 
-        // 已用内存 = 应用 + 联动 + 压缩（不要用 phys - free，会把文件缓存算进去导致接近 100%）
         var used = appMemory + wired + compressed
         if used > phys { used = phys }
 
@@ -135,6 +235,84 @@ enum SystemMetricsCollector {
         metrics.appMemory = appMemory
         metrics.cachedFiles = external
         metrics.usedMemory = used
+        metrics.memoryPressure = computePressure(
+            usedPercent: phys > 0 ? Double(used) / Double(phys) * 100 : 0,
+            availableBytes: free + speculative + external,
+            freeBytes: free + speculative,
+            phys: phys,
+            compressed: compressed,
+            swapUsed: metrics.swapUsed
+        )
+    }
+
+    /// 近似活动监视器「内存压力」：可用内存为主，压缩/交换为辅，避免常态压缩被算成 95%
+    private static func computePressure(
+        usedPercent: Double,
+        availableBytes: UInt64,
+        freeBytes: UInt64,
+        phys: UInt64,
+        compressed: UInt64,
+        swapUsed: UInt64
+    ) -> Double {
+        guard phys > 0 else { return 0 }
+
+        let availPct = Double(availableBytes) / Double(phys) * 100
+        let freePct = Double(freeBytes) / Double(phys) * 100
+        let compRatio = Double(compressed) / Double(phys)
+        let swapRatio = Double(swapUsed) / Double(phys)
+
+        // 1) 内核 memorystatus_level：越高越宽松
+        let level = sysctlInt("kern.memorystatus_level")
+        let fromStatus: Double
+        if level > 0 {
+            fromStatus = Double(100 - min(100, level))
+        } else {
+            fromStatus = max(0, 100 - availPct)
+        }
+
+        // 2) 可用内存（空闲 + 文件缓存）— 活动监视器口径的核心
+        // 可用 40%+ → 低压力；20% → 中；<10% → 高
+        let fromAvail: Double
+        if availPct >= 35 {
+            fromAvail = max(0, (50 - availPct) * 0.6)
+        } else if availPct >= 18 {
+            fromAvail = 25 + (35 - availPct) * 1.5
+        } else {
+            fromAvail = 50 + (18 - availPct) * 2.8
+        }
+
+        // 3) 真正空闲页很少时略抬高
+        var freeBoost = 0.0
+        if freePct < 5 { freeBoost = 12 }
+        else if freePct < 10 { freeBoost = 6 }
+
+        // 4) 压缩：只有「可用也紧张」时才明显抬高（macOS 常态就有几 GB 压缩）
+        var compBoost = 0.0
+        if availPct < 25 {
+            if compRatio > 0.25 { compBoost = 8 + (compRatio - 0.25) * 40 }
+            else if compRatio > 0.15 { compBoost = (compRatio - 0.15) * 40 }
+        } else if availPct < 35, compRatio > 0.35 {
+            compBoost = 6
+        }
+
+        // 5) 交换：按占用比例温和抬高，不再「有 swap 就 95」
+        var swapBoost = 0.0
+        if swapUsed > 64 * 1024 * 1024 {
+            swapBoost = min(35, 8 + swapRatio * 120)
+        }
+
+        // 主信号：status 与可用内存各半，再加 boost
+        var pressure = fromStatus * 0.4 + fromAvail * 0.6 + freeBoost + compBoost + swapBoost
+        // 与已用内存弱相关，防止完全脱节（上限温和）
+        pressure = max(pressure, usedPercent * 0.15)
+        // 可用很充裕时压低上限
+        if availPct >= 30 {
+            pressure = min(pressure, 45)
+        }
+        if availPct >= 40 {
+            pressure = min(pressure, 30)
+        }
+        return max(0, min(100, pressure))
     }
 
     // MARK: - Swap

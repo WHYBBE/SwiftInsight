@@ -10,20 +10,14 @@ struct SystemOverviewBar: View {
         GeometryReader { geo in
             let gap: CGFloat = 10
             let total = max(0, geo.size.width - gap * 5)
-            // 不均分：内存最宽，CPU/网络次之，交换/磁盘/负载更紧
-            let wMem = total * 0.28
-            let wCPU = total * 0.16
-            let wNet = total * 0.16
-            let wRest = total * 0.133
+            let wMem = total * 0.30
+            let wCPU = total * 0.18
+            let wNet = total * 0.15
+            let wRest = total * 0.123
 
-            HStack(spacing: gap) {
-                metricBlock(
-                    title: "CPU",
-                    value: m.cpuFormatted,
-                    detail: String(format: "用户 %.0f%%  系统 %.0f%%", m.cpuUser, m.cpuSystem),
-                    level: m.cpuUsed
-                )
-                .frame(width: wCPU, alignment: .leading)
+            HStack(alignment: .top, spacing: gap) {
+                cpuBlock(m)
+                    .frame(width: wCPU, alignment: .leading)
 
                 memoryBlock(m)
                     .frame(width: wMem, alignment: .leading)
@@ -53,17 +47,72 @@ struct SystemOverviewBar: View {
                 .frame(width: wRest, alignment: .leading)
             }
         }
-        .frame(height: 58)
+        .frame(height: 62)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
     }
 
-    /// 等宽卡片：左主值+总量，右三列「标签上 / 数值下」
+    private func cpuBlock(_ m: SystemMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("CPU")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 2)
+                if m.efficiencyCoreCount > 0 || m.performanceCoreCount > 0 {
+                    Text(m.coreSummaryFormatted)
+                        .font(.system(size: 9).monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            Text(m.cpuFormatted)
+                .font(.system(.callout, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(levelColor(m.cpuUsed))
+
+            Text(String(format: "用户 %.0f%%  系统 %.0f%%", m.cpuUser, m.cpuSystem))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+
+            CoreDotsStrip(
+                usages: m.coreUsages,
+                efficiencyCount: m.efficiencyCoreCount,
+                performanceCount: m.performanceCoreCount
+            )
+            .frame(height: 12)
+            .help(coreHelp(m))
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .clipped()
+    }
+
+    private func coreHelp(_ m: SystemMetrics) -> String {
+        if m.efficiencyCoreCount > 0 || m.performanceCoreCount > 0 {
+            return String(
+                format: "能效 %.0f%% · 性能 %.0f%% · %d 核",
+                m.efficiencyCoreUsage,
+                m.performanceCoreUsage,
+                m.coreUsages.count
+            )
+        }
+        return "\(m.coreUsages.count) 逻辑核"
+    }
+
     private func memoryBlock(_ m: SystemMetrics) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("内存")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text("内存")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 2)
+                Text(String(format: "压力 %.0f%%", m.memoryPressure))
+                    .font(.system(size: 9).monospacedDigit())
+                    .foregroundStyle(pressureColor(m.memoryPressure))
+            }
 
             HStack(alignment: .center, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -82,32 +131,34 @@ struct SystemOverviewBar: View {
                 Spacer(minLength: 4)
 
                 HStack(spacing: 6) {
-                    memPart(label: "应用", bytes: m.appMemory)
-                    memPart(label: "联动", bytes: m.wiredMemory)
-                    memPart(label: "压缩", bytes: m.compressedMemory)
+                    memPart(label: "应用", bytes: m.appMemory, color: .blue)
+                    memPart(label: "联动", bytes: m.wiredMemory, color: .pink)
+                    memPart(label: "压缩", bytes: m.compressedMemory, color: .orange)
                 }
                 .help(m.memoryDetailFormatted)
             }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.12))
-                    Capsule()
-                        .fill(levelColor(m.memoryUsedPercent).opacity(0.75))
-                        .frame(width: max(2, geo.size.width * CGFloat(min(100, max(0, m.memoryUsedPercent)) / 100)))
-                }
-            }
-            .frame(height: 3)
+            MemoryCompositionBar(
+                app: m.appMemory,
+                wired: m.wiredMemory,
+                compressed: m.compressedMemory,
+                available: m.availableMemory,
+                physical: m.physicalMemory
+            )
+            .frame(height: 4)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .clipped()
     }
 
-    private func memPart(label: String, bytes: UInt64) -> some View {
+    private func memPart(label: String, bytes: UInt64, color: Color) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+            HStack(spacing: 3) {
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(label)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
             Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -151,7 +202,7 @@ struct SystemOverviewBar: View {
             }
             .frame(height: 3)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .clipped()
     }
 
@@ -159,6 +210,99 @@ struct SystemOverviewBar: View {
         if level >= 85 { return .red }
         if level >= 60 { return .orange }
         return .primary
+    }
+
+    private func pressureColor(_ level: Double) -> Color {
+        if level >= 75 { return .red }
+        if level >= 45 { return .orange }
+        return .purple.opacity(0.85)
+    }
+}
+
+// MARK: - Core dots (SwiftUI)
+
+private struct CoreDotsStrip: View {
+    let usages: [Double]
+    let efficiencyCount: Int
+    let performanceCount: Int
+
+    var body: some View {
+        GeometryReader { geo in
+            let n = max(usages.count, 1)
+            let gap: CGFloat = 3
+            let size = min(13, max(7, (geo.size.width - gap * CGFloat(n - 1)) / CGFloat(n)))
+            let totalW = CGFloat(n) * size + CGFloat(max(0, n - 1)) * gap
+            HStack(spacing: gap) {
+                ForEach(Array(usages.enumerated()), id: \.offset) { i, usage in
+                    let isE = efficiencyCount > 0 && i < efficiencyCount
+                    CoreDot(usage: usage, color: isE ? .pink : .blue)
+                        .frame(width: size, height: size)
+                }
+            }
+            .frame(width: min(totalW, geo.size.width), height: geo.size.height, alignment: .leading)
+        }
+    }
+}
+
+private struct CoreDot: View {
+    let usage: Double
+    let color: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let inset: CGFloat = 1.25
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
+            let style = StrokeStyle(lineWidth: 1.6, lineCap: .round)
+            context.stroke(Path(ellipseIn: rect), with: .color(.secondary.opacity(0.18)), style: style)
+            let fraction = max(0, min(1, usage / 100))
+            if fraction > 0.01 {
+                var path = Path()
+                path.addArc(
+                    center: CGPoint(x: size.width / 2, y: size.height / 2),
+                    radius: min(rect.width, rect.height) / 2,
+                    startAngle: .degrees(-90),
+                    endAngle: .degrees(-90 + 360 * fraction),
+                    clockwise: false
+                )
+                context.stroke(path, with: .color(color), style: style)
+            }
+        }
+        .drawingGroup()
+    }
+}
+
+// MARK: - Memory composition bar
+
+private struct MemoryCompositionBar: View {
+    let app: UInt64
+    let wired: UInt64
+    let compressed: UInt64
+    let available: UInt64
+    let physical: UInt64
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = max(Double(physical), 1)
+            let parts: [(Color, Double)] = [
+                (.blue, Double(app) / total),
+                (.pink, Double(wired) / total),
+                (.orange, Double(compressed) / total),
+            ]
+            let used = parts.reduce(0) { $0 + $1.1 }
+            HStack(spacing: 0) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    if part.1 > 0.001 {
+                        Rectangle()
+                            .fill(part.0.opacity(0.85))
+                            .frame(width: max(1, geo.size.width * CGFloat(part.1)))
+                    }
+                }
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(width: max(0, geo.size.width * CGFloat(max(0, 1 - used))))
+            }
+            .clipShape(Capsule())
+        }
     }
 }
 
