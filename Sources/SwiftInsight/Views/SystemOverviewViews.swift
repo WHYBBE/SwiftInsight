@@ -219,7 +219,7 @@ struct SystemOverviewBar: View {
     }
 }
 
-// MARK: - Core dots (SwiftUI)
+// MARK: - Core dots (SwiftUI，自适应圆环 / 竖条)
 
 private struct CoreDotsStrip: View {
     let usages: [Double]
@@ -228,37 +228,67 @@ private struct CoreDotsStrip: View {
 
     var body: some View {
         GeometryReader { geo in
-            let n = max(usages.count, 1)
-            let gap: CGFloat = 3
-            let size = min(13, max(7, (geo.size.width - gap * CGFloat(n - 1)) / CGFloat(n)))
-            let totalW = CGFloat(n) * size + CGFloat(max(0, n - 1)) * gap
-            HStack(spacing: gap) {
-                ForEach(Array(usages.enumerated()), id: \.offset) { i, usage in
-                    let isE = efficiencyCount > 0 && i < efficiencyCount
-                    CoreDot(usage: usage, color: isE ? .pink : .blue)
-                        .frame(width: size, height: size)
+            let plan = CoreStripLayout.plan(
+                count: usages.count,
+                width: geo.size.width,
+                height: geo.size.height
+            )
+            Canvas { context, size in
+                switch plan {
+                case .rings(let dot, let gap, let cols, let rows):
+                    drawRings(context: context, size: size, dot: dot, gap: gap, cols: cols, rows: rows)
+                case .bars(let barW, let gap):
+                    drawBars(context: context, size: size, barW: barW, gap: gap)
                 }
             }
-            .frame(width: min(totalW, geo.size.width), height: geo.size.height, alignment: .leading)
+            .drawingGroup()
         }
+        .help(helpText)
     }
-}
 
-private struct CoreDot: View {
-    let usage: Double
-    let color: Color
+    private var helpText: String {
+        guard !usages.isEmpty else { return "" }
+        if efficiencyCount > 0 || performanceCount > 0 {
+            let e = efficiencyCount
+            let p = performanceCount
+            let eAvg = e > 0 ? usages.prefix(e).reduce(0, +) / Double(e) : 0
+            let pAvg = p > 0 ? usages.suffix(p).reduce(0, +) / Double(p) : 0
+            return String(format: "%d 核 · E %.0f%% · P %.0f%%", usages.count, eAvg, pAvg)
+        }
+        let avg = usages.reduce(0, +) / Double(usages.count)
+        return String(format: "%d 核 · 均值 %.0f%%", usages.count, avg)
+    }
 
-    var body: some View {
-        Canvas { context, size in
-            let inset: CGFloat = 1.25
-            let rect = CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
-            let style = StrokeStyle(lineWidth: 1.6, lineCap: .round)
+    private func drawRings(
+        context: GraphicsContext,
+        size: CGSize,
+        dot: CGFloat,
+        gap: CGFloat,
+        cols: Int,
+        rows: Int
+    ) {
+        let n = usages.count
+        let totalW = CGFloat(cols) * dot + CGFloat(max(0, cols - 1)) * gap
+        let totalH = CGFloat(rows) * dot + CGFloat(max(0, rows - 1)) * gap
+        let startX = max(0, (size.width - totalW) / 2)
+        let startY = max(0, (size.height - totalH) / 2)
+        let lineW = max(1.0, min(1.8, dot * 0.14))
+
+        for i in 0..<n {
+            let col = i % cols
+            let row = i / cols
+            let x = startX + CGFloat(col) * (dot + gap)
+            let y = startY + CGFloat(row) * (dot + gap)
+            let isE = efficiencyCount > 0 && i < efficiencyCount
+            let color: Color = isE ? .pink : .blue
+            let rect = CGRect(x: x, y: y, width: dot, height: dot).insetBy(dx: lineW * 0.5, dy: lineW * 0.5)
+            let style = StrokeStyle(lineWidth: lineW, lineCap: .round)
             context.stroke(Path(ellipseIn: rect), with: .color(.secondary.opacity(0.18)), style: style)
-            let fraction = max(0, min(1, usage / 100))
+            let fraction = max(0, min(1, usages[i] / 100))
             if fraction > 0.01 {
                 var path = Path()
                 path.addArc(
-                    center: CGPoint(x: size.width / 2, y: size.height / 2),
+                    center: CGPoint(x: rect.midX, y: rect.midY),
                     radius: min(rect.width, rect.height) / 2,
                     startAngle: .degrees(-90),
                     endAngle: .degrees(-90 + 360 * fraction),
@@ -267,7 +297,71 @@ private struct CoreDot: View {
                 context.stroke(path, with: .color(color), style: style)
             }
         }
-        .drawingGroup()
+    }
+
+    private func drawBars(context: GraphicsContext, size: CGSize, barW: CGFloat, gap: CGFloat) {
+        let n = usages.count
+        let totalW = CGFloat(n) * barW + CGFloat(max(0, n - 1)) * gap
+        let startX = max(0, (size.width - totalW) / 2)
+        let maxH = max(3, size.height)
+        for i in 0..<n {
+            let x = startX + CGFloat(i) * (barW + gap)
+            let usage = max(0, min(100, usages[i]))
+            let h = max(1.5, maxH * CGFloat(usage / 100))
+            let isE = efficiencyCount > 0 && i < efficiencyCount
+            let color: Color = isE ? .pink : .blue
+            let track = CGRect(x: x, y: 0, width: barW, height: maxH)
+            context.fill(
+                Path(roundedRect: track, cornerRadius: barW / 2),
+                with: .color(.secondary.opacity(0.12))
+            )
+            let fill = CGRect(x: x, y: maxH - h, width: barW, height: h)
+            context.fill(
+                Path(roundedRect: fill, cornerRadius: barW / 2),
+                with: .color(color.opacity(0.9))
+            )
+        }
+    }
+}
+
+private enum CoreStripLayout {
+    case rings(size: CGFloat, gap: CGFloat, cols: Int, rows: Int)
+    case bars(barWidth: CGFloat, gap: CGFloat)
+
+    static func plan(count: Int, width: CGFloat, height: CGFloat) -> CoreStripLayout {
+        let n = max(count, 1)
+        let minRing: CGFloat = 6.5
+        let ideal = min(13, max(minRing, height))
+
+        if let one = fit(n: n, cols: n, rows: 1, width: width, height: height, minSize: minRing, ideal: ideal) {
+            return one
+        }
+        if n > 8, height >= minRing * 2 {
+            let cols = (n + 1) / 2
+            if let two = fit(n: n, cols: cols, rows: 2, width: width, height: height, minSize: minRing, ideal: ideal) {
+                return two
+            }
+        }
+        let gap: CGFloat = n > 20 ? 1 : 1.5
+        let barW = max(1.5, min(6, (width - gap * CGFloat(n - 1)) / CGFloat(n)))
+        return .bars(barWidth: barW, gap: gap)
+    }
+
+    private static func fit(
+        n: Int,
+        cols: Int,
+        rows: Int,
+        width: CGFloat,
+        height: CGFloat,
+        minSize: CGFloat,
+        ideal: CGFloat
+    ) -> CoreStripLayout? {
+        let gap: CGFloat = cols > 14 ? 1.5 : 2.5
+        let sizeByW = (width - gap * CGFloat(max(0, cols - 1))) / CGFloat(cols)
+        let sizeByH = (height - gap * CGFloat(max(0, rows - 1))) / CGFloat(rows)
+        let size = min(ideal, sizeByW, sizeByH)
+        guard size >= minSize else { return nil }
+        return .rings(size: size, gap: gap, cols: cols, rows: rows)
     }
 }
 

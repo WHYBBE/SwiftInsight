@@ -919,7 +919,7 @@ private final class MultiSegmentRingView: NSView {
     }
 }
 
-// MARK: - Core dots
+// MARK: - Core dots（自适应：圆环 / 双行 / 竖条直方图）
 
 private final class CoreDotsView: NSView {
     private var usages: [Double] = []
@@ -936,49 +936,138 @@ private final class CoreDotsView: NSView {
         self.usages = usages
         self.efficiencyCount = efficiencyCount
         self.performanceCount = performanceCount
+        toolTip = Self.tooltip(usages: usages, e: efficiencyCount, p: performanceCount)
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard !usages.isEmpty else { return }
-        let n = usages.count
-        let maxDot: CGFloat = 22
-        let spacing: CGFloat = 6
-        let totalW = CGFloat(n) * maxDot + CGFloat(max(0, n - 1)) * spacing
-        var startX = (bounds.width - totalW) / 2
-        if startX < 0 { startX = 0 }
-        let scale = totalW > bounds.width
-            ? bounds.width / totalW
-            : 1
-        let dot = maxDot * scale
-        let gap = spacing * scale
-        let midY = bounds.midY
+        let plan = CoreLayout.plan(count: usages.count, width: bounds.width, height: bounds.height)
+        switch plan {
+        case .rings(let size, let gap, let cols, let rows):
+            drawRings(size: size, gap: gap, cols: cols, rows: rows)
+        case .bars(let barW, let gap):
+            drawBars(barW: barW, gap: gap)
+        }
+    }
 
-        for (i, usage) in usages.enumerated() {
-            let x = startX + CGFloat(i) * (dot + gap)
+    private func drawRings(size: CGFloat, gap: CGFloat, cols: Int, rows: Int) {
+        let n = usages.count
+        let totalW = CGFloat(cols) * size + CGFloat(max(0, cols - 1)) * gap
+        let totalH = CGFloat(rows) * size + CGFloat(max(0, rows - 1)) * gap
+        let startX = max(0, (bounds.width - totalW) / 2)
+        let startY = max(0, (bounds.height - totalH) / 2)
+        let lineW = max(1.2, min(2.5, size * 0.14))
+
+        for i in 0..<n {
+            let col = i % cols
+            let row = i / cols
+            let x = startX + CGFloat(col) * (size + gap)
+            // AppKit y 向上，row 0 在上
+            let y = startY + CGFloat(rows - 1 - row) * (size + gap)
             let isE = efficiencyCount > 0 && i < efficiencyCount
             let color = isE ? MenuBarPalette.eCore : MenuBarPalette.pCore
-            let rect = NSRect(x: x, y: midY - dot / 2, width: dot, height: dot)
-
-            // 底环
-            let track = NSBezierPath(ovalIn: rect.insetBy(dx: 1.5, dy: 1.5))
-            track.lineWidth = 2.5
+            let rect = NSRect(x: x, y: y, width: size, height: size)
+            let track = NSBezierPath(ovalIn: rect.insetBy(dx: lineW * 0.6, dy: lineW * 0.6))
+            track.lineWidth = lineW
             NSColor.labelColor.withAlphaComponent(0.12).setStroke()
             track.stroke()
-
-            let angle = CGFloat(max(0, min(100, usage)) / 100) * 360
+            let angle = CGFloat(max(0, min(100, usages[i])) / 100) * 360
             if angle > 1 {
                 let arc = NSBezierPath()
-                arc.lineWidth = 2.5
+                arc.lineWidth = lineW
                 arc.lineCapStyle = .round
                 let c = NSPoint(x: rect.midX, y: rect.midY)
-                let r = (dot - 3) / 2
+                let r = (size - lineW * 1.2) / 2
                 arc.appendArc(withCenter: c, radius: r, startAngle: 90, endAngle: 90 - angle, clockwise: true)
                 color.setStroke()
                 arc.stroke()
             }
         }
+    }
+
+    private func drawBars(barW: CGFloat, gap: CGFloat) {
+        let n = usages.count
+        let totalW = CGFloat(n) * barW + CGFloat(max(0, n - 1)) * gap
+        let startX = max(0, (bounds.width - totalW) / 2)
+        let maxH = max(4, bounds.height - 1)
+        for i in 0..<n {
+            let x = startX + CGFloat(i) * (barW + gap)
+            let usage = max(0, min(100, usages[i]))
+            let h = max(2, maxH * CGFloat(usage / 100))
+            let isE = efficiencyCount > 0 && i < efficiencyCount
+            let color = isE ? MenuBarPalette.eCore : MenuBarPalette.pCore
+            // 底轨
+            NSColor.labelColor.withAlphaComponent(0.08).setFill()
+            NSBezierPath(roundedRect: NSRect(x: x, y: 0, width: barW, height: maxH), xRadius: barW / 2, yRadius: barW / 2).fill()
+            // 填充自下而上
+            color.withAlphaComponent(0.9).setFill()
+            NSBezierPath(roundedRect: NSRect(x: x, y: 0, width: barW, height: h), xRadius: barW / 2, yRadius: barW / 2).fill()
+        }
+    }
+
+    private static func tooltip(usages: [Double], e: Int, p: Int) -> String {
+        guard !usages.isEmpty else { return "" }
+        if e > 0 || p > 0 {
+            let eAvg = e > 0 ? usages.prefix(e).reduce(0, +) / Double(e) : 0
+            let pAvg = p > 0 ? usages.suffix(p).reduce(0, +) / Double(p) : 0
+            return String(format: "%d 核 · E %.0f%% · P %.0f%%", usages.count, eAvg, pAvg)
+        }
+        let avg = usages.reduce(0, +) / Double(usages.count)
+        return String(format: "%d 核 · 均值 %.0f%%", usages.count, avg)
+    }
+}
+
+/// 根据宽高与核数选择布局
+private enum CoreLayout {
+    case rings(size: CGFloat, gap: CGFloat, cols: Int, rows: Int)
+    case bars(barWidth: CGFloat, gap: CGFloat)
+
+    static func plan(count: Int, width: CGFloat, height: CGFloat) -> CoreLayout {
+        let n = max(count, 1)
+        let minRing: CGFloat = 8
+        let idealRing = min(22, max(minRing, height - 1))
+
+        // 单行圆环
+        if let one = fitRings(n: n, cols: n, rows: 1, width: width, height: height, minSize: minRing, ideal: idealRing) {
+            return one
+        }
+        // 双行（核数较多时）
+        if n > 8, height >= minRing * 2 + 2 {
+            let cols = (n + 1) / 2
+            if let two = fitRings(n: n, cols: cols, rows: 2, width: width, height: height, minSize: minRing, ideal: idealRing) {
+                return two
+            }
+        }
+        // 三行（超多核）
+        if n > 16, height >= minRing * 3 + 4 {
+            let cols = (n + 2) / 3
+            if let three = fitRings(n: n, cols: cols, rows: 3, width: width, height: height, minSize: 7, ideal: idealRing) {
+                return three
+            }
+        }
+        // 竖条直方图：任意核数都能铺满宽度
+        let gap: CGFloat = n > 24 ? 1 : (n > 16 ? 1.5 : 2)
+        let barW = max(2, min(8, (width - gap * CGFloat(n - 1)) / CGFloat(n)))
+        return .bars(barWidth: barW, gap: gap)
+    }
+
+    private static func fitRings(
+        n: Int,
+        cols: Int,
+        rows: Int,
+        width: CGFloat,
+        height: CGFloat,
+        minSize: CGFloat,
+        ideal: CGFloat
+    ) -> CoreLayout? {
+        let gap: CGFloat = cols > 16 ? 2 : (cols > 10 ? 3 : 5)
+        let sizeByW = (width - gap * CGFloat(max(0, cols - 1))) / CGFloat(cols)
+        let sizeByH = (height - gap * CGFloat(max(0, rows - 1))) / CGFloat(rows)
+        let size = min(ideal, sizeByW, sizeByH)
+        guard size >= minSize else { return nil }
+        return .rings(size: size, gap: gap, cols: cols, rows: rows)
     }
 }
 
