@@ -72,12 +72,12 @@ final class ProcessMonitor: ObservableObject {
     /// 状态栏文案
     var statusText: String {
         if !isRunning {
-            return "已停止"
+            return L("status.stopped")
         }
         if isRefreshPaused {
-            return "已暂停 · 松开 ⌃ 继续"
+            return L("status.paused")
         }
-        return "实时 · 每 \(Int(refreshInterval)) 秒"
+        return String(format: L("status.live"), Int(refreshInterval))
     }
 
     // MARK: - Lifecycle

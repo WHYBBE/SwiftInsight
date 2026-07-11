@@ -10,17 +10,17 @@ enum MenuBarIconMode: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .cpu: return "CPU 状态条"
-        case .memory: return "内存状态条"
-        case .combined: return "CPU + 内存"
+        case .cpu: return L("icon.cpu")
+        case .memory: return L("icon.memory")
+        case .combined: return L("icon.combined")
         }
     }
 
     var shortName: String {
         switch self {
         case .cpu: return "CPU"
-        case .memory: return "内存"
-        case .combined: return "叠加"
+        case .memory: return L("icon.short.memory")
+        case .combined: return L("icon.short.combined")
         }
     }
 }

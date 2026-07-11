@@ -11,19 +11,19 @@ enum ProcessCategory: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .appleSystem: return "Apple 系统"
-        case .appleApp:    return "Apple 应用"
-        case .thirdParty:  return "第三方"
-        case .unknown:     return "未知"
+        case .appleSystem: return L("cat.appleSystem")
+        case .appleApp:    return L("cat.appleApp")
+        case .thirdParty:  return L("cat.thirdParty")
+        case .unknown:     return L("cat.unknown")
         }
     }
 
     var shortName: String {
         switch self {
-        case .appleSystem: return "系统"
-        case .appleApp:    return "官方"
-        case .thirdParty:  return "三方"
-        case .unknown:     return "未知"
+        case .appleSystem: return L("cat.short.system")
+        case .appleApp:    return L("cat.short.apple")
+        case .thirdParty:  return L("cat.short.third")
+        case .unknown:     return L("cat.unknown")
         }
     }
 
@@ -61,7 +61,8 @@ enum CategoryFilterItem: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .all: return "全部进程"
+        case .all: return L("cat.all")
+
         case .appleSystem: return ProcessCategory.appleSystem.displayName
         case .appleApp: return ProcessCategory.appleApp.displayName
         case .thirdParty: return ProcessCategory.thirdParty.displayName
@@ -148,10 +149,10 @@ struct MonitoredProcess: Identifiable, Hashable {
     /// 悬停提示
     var metricsSourceHint: String? {
         if metricsFromHelper {
-            return "来自 root Helper 补全（本地无法直接读取该进程 taskinfo）"
+            return L("status.helper.hint")
         }
         if !cpuAvailable || !memoryAvailable {
-            return "无法读取该进程资源：系统保护/其他用户进程。可安装 root Helper 补全。"
+            return L("status.helper.unavailable")
         }
         return nil
     }
@@ -227,11 +228,11 @@ enum SortColumn: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .cpu: return "CPU"
-        case .memory: return "内存"
-        case .name: return "名称"
-        case .pid: return "PID"
-        case .threads: return "线程"
+        case .cpu: return L("sort.cpu")
+        case .memory: return L("sort.memory")
+        case .name: return L("sort.name")
+        case .pid: return L("sort.pid")
+        case .threads: return L("sort.threads")
         }
     }
 }

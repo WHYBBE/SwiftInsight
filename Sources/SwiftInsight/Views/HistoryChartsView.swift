@@ -9,7 +9,7 @@ struct SystemHistoryCharts: View {
     var body: some View {
         let samples = monitor.systemHistory
         HStack(spacing: 12) {
-            chartCard(title: "CPU 趋势", unit: "%") {
+            chartCard(title: L("chart.cpu"), unit: "%") {
                 Chart(samples) { s in
                     LineMark(
                         x: .value("t", s.date),
@@ -30,7 +30,7 @@ struct SystemHistoryCharts: View {
                 .chartYAxis(.hidden)
             }
 
-            chartCard(title: "内存 趋势", unit: "%") {
+            chartCard(title: L("chart.memory"), unit: "%") {
                 Chart(samples) { s in
                     LineMark(
                         x: .value("t", s.date),
@@ -51,27 +51,27 @@ struct SystemHistoryCharts: View {
                 .chartYAxis(.hidden)
             }
 
-            chartCard(title: "分类 CPU", unit: "%") {
+            chartCard(title: L("chart.category"), unit: "%") {
                 Chart {
                     ForEach(samples) { s in
                         LineMark(
                             x: .value("t", s.date),
-                            y: .value("第三方", s.thirdPartyCPU)
+                            y: .value(L("chart.series.third"), s.thirdPartyCPU)
                         )
-                        .foregroundStyle(by: .value("系列", "第三方"))
+                        .foregroundStyle(by: .value("series", L("chart.series.third")))
                         .interpolationMethod(.catmullRom)
 
                         LineMark(
                             x: .value("t", s.date),
                             y: .value("Apple", s.appleCPU)
                         )
-                        .foregroundStyle(by: .value("系列", "Apple"))
+                        .foregroundStyle(by: .value("series", L("chart.series.apple")))
                         .interpolationMethod(.catmullRom)
                     }
                 }
                 .chartForegroundStyleScale([
-                    "第三方": Color.orange,
-                    "Apple": Color.cyan,
+                    L("chart.series.third"): Color.orange,
+                    L("chart.series.apple"): Color.cyan,
                 ])
                 .chartLegend(position: .top, alignment: .trailing, spacing: 4)
                 .chartXAxis(.hidden)
@@ -79,7 +79,7 @@ struct SystemHistoryCharts: View {
             }
 
             VStack(alignment: .trailing, spacing: 4) {
-                Text("历史")
+                Text(L("chart.history"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Picker("", selection: $monitor.historyWindow) {
@@ -92,11 +92,11 @@ struct SystemHistoryCharts: View {
                 .frame(width: 88)
 
                 if samples.isEmpty {
-                    Text("采集中…")
+                    Text(L("chart.collecting"))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 } else {
-                    Text("\(samples.count) 点")
+                    Text(String(format: L("chart.points"), samples.count))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)
                 }
@@ -135,7 +135,7 @@ struct ProcessHistoryChart: View {
     var body: some View {
         if samples.count < 2 {
             HStack {
-                Text("历史曲线采集中（需 \(window.displayName) 内多个采样点）")
+                Text(String(format: L("chart.need_samples"), window.displayName))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -167,7 +167,7 @@ struct ProcessHistoryChart: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("内存")
+                    Text(L("metric.memory"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Chart(samples) { s in

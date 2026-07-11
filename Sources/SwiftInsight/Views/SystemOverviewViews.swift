@@ -23,23 +23,23 @@ struct SystemOverviewBar: View {
                     .frame(width: wMem, alignment: .leading)
 
                 metricBlock(
-                    title: "交换",
+                    title: L("metric.swap"),
                     value: m.swapFormatted,
                     detail: m.swapTotal > 0
-                        ? "共 \(ByteCountFormatter.string(fromByteCount: Int64(m.swapTotal), countStyle: .memory))"
-                        : "未使用",
+                        ? String(format: L("metric.swap_total"), ByteCountFormatter.string(fromByteCount: Int64(m.swapTotal), countStyle: .memory))
+                        : L("metric.swap_none"),
                     level: m.swapUsed > 0 ? 40 : 0
                 )
                 .frame(width: wRest, alignment: .leading)
 
-                metricBlock(title: "网络", value: "吞吐", detail: m.networkFormatted, level: 0)
+                metricBlock(title: L("metric.network"), value: L("metric.throughput"), detail: m.networkFormatted, level: 0)
                     .frame(width: wNet, alignment: .leading)
 
-                metricBlock(title: "磁盘", value: "页换入出", detail: m.diskFormatted, level: 0)
+                metricBlock(title: L("metric.disk"), value: L("metric.page_io"), detail: m.diskFormatted, level: 0)
                     .frame(width: wRest, alignment: .leading)
 
                 metricBlock(
-                    title: "负载",
+                    title: L("metric.load"),
                     value: String(format: "%.2f", m.loadAverage1),
                     detail: m.loadFormatted,
                     level: min(100, m.loadAverage1 / max(1, Double(m.processorCount)) * 100)
@@ -78,7 +78,7 @@ struct SystemOverviewBar: View {
                 .monospacedDigit()
                 .foregroundStyle(levelColor(m.cpuUsed))
 
-            Text(String(format: "用户 %.0f%%  系统 %.0f%%", m.cpuUser, m.cpuSystem))
+            Text(String(format: L("metric.user_system"), m.cpuUser, m.cpuSystem))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
@@ -116,23 +116,23 @@ struct SystemOverviewBar: View {
     private func coreHelp(_ m: SystemMetrics) -> String {
         if m.efficiencyCoreCount > 0 || m.performanceCoreCount > 0 {
             return String(
-                format: "能效 %.0f%% · 性能 %.0f%% · %d 核",
+                format: L("metric.ep_cores"),
                 m.efficiencyCoreUsage,
                 m.performanceCoreUsage,
                 m.coreUsages.count
             )
         }
-        return "\(m.coreUsages.count) 逻辑核"
+        return String(format: L("metric.logical_cores"), m.coreUsages.count)
     }
 
     private func memoryBlock(_ m: SystemMetrics) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text("内存")
+                Text(L("metric.memory"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 2)
-                Text(String(format: "压力 %.0f%% · %@", m.memoryPressure, m.memoryPressureLabel))
+                Text(String(format: L("metric.pressure_fmt"), m.memoryPressure, m.memoryPressureLabel))
                     .font(.system(size: 9).monospacedDigit())
                     .foregroundStyle(pressureColor(m))
                     .help(String(format: "kern.memorystatus_vm_pressure_level = %d", m.memoryPressureLevel))
@@ -155,9 +155,9 @@ struct SystemOverviewBar: View {
                 Spacer(minLength: 4)
 
                 HStack(spacing: 6) {
-                    memPart(label: "应用", bytes: m.appMemory, color: .blue)
-                    memPart(label: "联动", bytes: m.wiredMemory, color: .pink)
-                    memPart(label: "压缩", bytes: m.compressedMemory, color: .orange)
+                    memPart(label: L("metric.app"), bytes: m.appMemory, color: .blue)
+                    memPart(label: L("metric.wired"), bytes: m.wiredMemory, color: .pink)
+                    memPart(label: L("metric.compressed"), bytes: m.compressedMemory, color: .orange)
                 }
                 .help(m.memoryDetailFormatted)
             }
@@ -279,10 +279,10 @@ private struct CoreDotsStrip: View {
             let p = performanceCount
             let eAvg = e > 0 ? usages.prefix(e).reduce(0, +) / Double(e) : 0
             let pAvg = p > 0 ? usages.suffix(p).reduce(0, +) / Double(p) : 0
-            return String(format: "%d 核 · E %.0f%% · P %.0f%%", usages.count, eAvg, pAvg)
+            return String(format: L("mb.cores_tip"), usages.count, eAvg, pAvg)
         }
         let avg = usages.reduce(0, +) / Double(usages.count)
-        return String(format: "%d 核 · 均值 %.0f%%", usages.count, avg)
+        return String(format: L("mb.cores_avg"), usages.count, avg)
     }
 
     private func drawRings(
@@ -435,10 +435,10 @@ struct CategoryRankingsView: View {
     var body: some View {
         let r = monitor.rankings
         VStack(alignment: .leading, spacing: 12) {
-            rankSection(title: "第三方 · CPU", symbol: "flame", items: r.thirdPartyByCPU)
-            rankSection(title: "第三方 · 内存", symbol: "memorychip", items: r.thirdPartyByMemory)
-            rankSection(title: "Apple 系统 · CPU", symbol: "gearshape.2", items: r.appleSystemByCPU)
-            rankSection(title: "Apple 应用 · CPU", symbol: "apple.logo", items: r.appleAppByCPU)
+            rankSection(title: L("rank.third_cpu"), symbol: "flame", items: r.thirdPartyByCPU)
+            rankSection(title: L("rank.third_mem"), symbol: "memorychip", items: r.thirdPartyByMemory)
+            rankSection(title: L("rank.sys_cpu"), symbol: "gearshape.2", items: r.appleSystemByCPU)
+            rankSection(title: L("rank.app_cpu"), symbol: "apple.logo", items: r.appleAppByCPU)
         }
         .padding(.vertical, 4)
     }
@@ -450,7 +450,7 @@ struct CategoryRankingsView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             if items.isEmpty {
-                Text("暂无数据")
+                Text(L("rank.empty"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             } else {
@@ -497,13 +497,13 @@ struct ProcessDetailPanel: View {
 
                 HStack(spacing: 16) {
                     if let parent = detail.parentName {
-                        labelValue("父进程", "\(parent) (\(process.ppid))")
+                        labelValue(L("detail.parent"), "\(parent) (\(process.ppid))")
                     } else {
-                        labelValue("父进程", "PID \(process.ppid)")
+                        labelValue(L("detail.parent"), "PID \(process.ppid)")
                     }
-                    labelValue("打开文件", "\(detail.openFileCount)")
+                    labelValue(L("detail.open_files"), "\(detail.openFileCount)")
                     if let start = process.startTime {
-                        labelValue("启动", start.formatted(date: .omitted, time: .shortened))
+                        labelValue(L("detail.started"), start.formatted(date: .omitted, time: .shortened))
                     }
                     Text(detail.sampleNote)
                         .font(.caption2)

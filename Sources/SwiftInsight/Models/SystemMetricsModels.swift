@@ -65,7 +65,7 @@ struct SystemMetrics: Equatable {
         let app = ByteCountFormatter.string(fromByteCount: Int64(appMemory), countStyle: .memory)
         let wired = ByteCountFormatter.string(fromByteCount: Int64(wiredMemory), countStyle: .memory)
         let comp = ByteCountFormatter.string(fromByteCount: Int64(compressedMemory), countStyle: .memory)
-        return "应用 \(app) · 联动 \(wired) · 压缩 \(comp)"
+        return String(format: L("metric.mem_detail"), app, wired, comp)
     }
     var swapFormatted: String {
         ByteCountFormatter.string(fromByteCount: Int64(swapUsed), countStyle: .memory)
@@ -81,9 +81,9 @@ struct SystemMetrics: Equatable {
     }
     var coreSummaryFormatted: String {
         if performanceCoreCount > 0 || efficiencyCoreCount > 0 {
-            return String(format: "E %.0f%%  P %.0f%%", efficiencyCoreUsage, performanceCoreUsage)
+            return String(format: L("metric.core_summary"), efficiencyCoreUsage, performanceCoreUsage)
         }
-        return String(format: "%d 核", processorCount)
+        return String(format: L("metric.cores"), processorCount)
     }
     var frequencyFormatted: String? {
         guard cpuFrequencyMHz > 1 else { return nil }
@@ -103,18 +103,18 @@ struct SystemMetrics: Equatable {
     }
     var thermalStateLabel: String {
         switch thermalState {
-        case 1: return "热·中"
-        case 2: return "热·高"
-        case 3: return "热·危"
-        default: return "正常"
+        case 1: return L("thermal.fair")
+        case 2: return L("thermal.serious")
+        case 3: return L("thermal.critical")
+        default: return L("thermal.nominal")
         }
     }
     /// 与活动监视器一致的三档压力文案
     var memoryPressureLabel: String {
         switch memoryPressureLevel {
-        case 4: return "危急"
-        case 2: return "警告"
-        default: return "正常"
+        case 4: return L("pressure.critical")
+        case 2: return L("pressure.warning")
+        default: return L("pressure.normal")
         }
     }
 

@@ -27,7 +27,7 @@ struct ProcessTableView: View {
 
     private var sortHeader: some View {
         HStack(spacing: 12) {
-            Picker("视图", selection: $monitor.displayMode) {
+            Picker(L("toolbar.view"), selection: $monitor.displayMode) {
                 ForEach(ListDisplayMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
                 }
@@ -37,7 +37,7 @@ struct ProcessTableView: View {
 
             Divider().frame(height: 16)
 
-            Text("排序:")
+            Text(L("table.sort"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ForEach(SortColumn.allCases) { col in
@@ -76,9 +76,9 @@ struct ProcessTableView: View {
     private var countLabel: String {
         if monitor.displayMode == .tree {
             let groups = monitor.displayRows.filter { $0.depth == 0 }.count
-            return "\(groups) 组 · \(monitor.displayRows.count) 行"
+            return String(format: L("table.groups"), groups, monitor.displayRows.count)
         }
-        return "\(monitor.displayRows.count) 项"
+        return String(format: L("table.items"), monitor.displayRows.count)
     }
 }
 
@@ -154,12 +154,12 @@ private struct ProcessNSTable: NSViewRepresentable {
         }
 
         static let columns: [ColumnDef] = [
-            .init(id: .init("name"), title: "名称", width: 360, minWidth: 200, numeric: false),
+            .init(id: .init("name"), title: L("table.name"), width: 360, minWidth: 200, numeric: false),
             .init(id: .init("cpu"), title: "CPU %", width: 72, minWidth: 56, numeric: true),
-            .init(id: .init("memory"), title: "内存", width: 90, minWidth: 70, numeric: true),
-            .init(id: .init("threads"), title: "线程", width: 56, minWidth: 44, numeric: true),
+            .init(id: .init("memory"), title: L("metric.memory"), width: 90, minWidth: 70, numeric: true),
+            .init(id: .init("threads"), title: L("sort.threads"), width: 56, minWidth: 44, numeric: true),
             .init(id: .init("pid"), title: "PID", width: 64, minWidth: 48, numeric: true),
-            .init(id: .init("user"), title: "用户", width: 88, minWidth: 60, numeric: false),
+            .init(id: .init("user"), title: L("table.user"), width: 88, minWidth: 60, numeric: false),
         ]
 
         var parent: ProcessNSTable
@@ -520,7 +520,7 @@ private final class TreeNameCell: NSTableCellView {
             disclosure.isHidden = false
             disclosure.image = NSImage(
                 systemSymbolName: isExpanded ? "chevron.down" : "chevron.right",
-                accessibilityDescription: isExpanded ? "折叠" : "展开"
+                accessibilityDescription: isExpanded ? L("menu.collapse") : L("menu.expand")
             )
             disclosure.contentTintColor = .secondaryLabelColor
             disclosure.isEnabled = true
@@ -569,7 +569,7 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
         let process = item.process
 
         if item.hasChildren {
-            let title = item.isExpanded ? "折叠" : "展开"
+            let title = item.isExpanded ? L("menu.collapse") : L("menu.expand")
             let expand = NSMenuItem(title: title, action: #selector(toggleExpand(_:)), keyEquivalent: "")
             expand.target = self
             expand.representedObject = item.groupKey
@@ -577,12 +577,12 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        let quit = NSMenuItem(title: "退出", action: #selector(quitProcess(_:)), keyEquivalent: "")
+        let quit = NSMenuItem(title: L("alert.quit_btn"), action: #selector(quitProcess(_:)), keyEquivalent: "")
         quit.target = self
         quit.representedObject = process.pid
         menu.addItem(quit)
 
-        let force = NSMenuItem(title: "强制退出", action: #selector(forceQuitProcess(_:)), keyEquivalent: "")
+        let force = NSMenuItem(title: L("alert.force_quit_btn"), action: #selector(forceQuitProcess(_:)), keyEquivalent: "")
         force.target = self
         force.representedObject = process.pid
         menu.addItem(force)
@@ -590,19 +590,19 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
         menu.addItem(.separator())
 
         if !process.path.isEmpty {
-            let reveal = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealInFinder(_:)), keyEquivalent: "")
+            let reveal = NSMenuItem(title: L("menu.reveal"), action: #selector(revealInFinder(_:)), keyEquivalent: "")
             reveal.target = self
             reveal.representedObject = process.path
             menu.addItem(reveal)
 
-            let copyPath = NSMenuItem(title: "复制路径", action: #selector(copyString(_:)), keyEquivalent: "")
+            let copyPath = NSMenuItem(title: L("menu.copy_path"), action: #selector(copyString(_:)), keyEquivalent: "")
             copyPath.target = self
             copyPath.representedObject = process.path
             menu.addItem(copyPath)
         }
 
         if let bid = process.bundleIdentifier {
-            let copyBID = NSMenuItem(title: "复制 Bundle ID", action: #selector(copyString(_:)), keyEquivalent: "")
+            let copyBID = NSMenuItem(title: L("menu.copy_bid"), action: #selector(copyString(_:)), keyEquivalent: "")
             copyBID.target = self
             copyBID.representedObject = bid
             menu.addItem(copyBID)
@@ -610,7 +610,7 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let filter = NSMenuItem(title: "筛选此分类", action: #selector(filterCategory(_:)), keyEquivalent: "")
+        let filter = NSMenuItem(title: L("menu.filter_category"), action: #selector(filterCategory(_:)), keyEquivalent: "")
         filter.target = self
         filter.representedObject = process.category.rawValue
         menu.addItem(filter)

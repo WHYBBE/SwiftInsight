@@ -30,9 +30,9 @@ enum ListDisplayMode: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .flat: return "列表"
-        case .tree: return "聚合"
-        case .parentTree: return "父子"
+        case .flat: return L("mode.flat")
+        case .tree: return L("mode.tree")
+        case .parentTree: return L("mode.parentTree")
         }
     }
 }
@@ -86,9 +86,9 @@ enum HistoryWindow: TimeInterval, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .thirtySeconds: return "30 秒"
-        case .twoMinutes: return "2 分钟"
-        case .fiveMinutes: return "5 分钟"
+        case .thirtySeconds: return L("history.30s")
+        case .twoMinutes: return L("history.2m")
+        case .fiveMinutes: return L("history.5m")
         }
     }
 }

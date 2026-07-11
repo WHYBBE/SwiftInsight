@@ -7,9 +7,9 @@ struct MenuBarCompactView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("菜单栏图标")
+            Text(L("menubar.icon"))
                 .font(.headline)
-            Picker("模式", selection: $menuBar.iconMode) {
+            Picker(L("menubar.mode"), selection: $menuBar.iconMode) {
                 ForEach(MenuBarIconMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
                 }
@@ -17,7 +17,7 @@ struct MenuBarCompactView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             Text(String(
-                format: "CPU %.0f%% · 内存 %.0f%%",
+                format: L("status.cpu_mem"),
                 monitor.systemMetrics.cpuUsed,
                 monitor.systemMetrics.memoryUsedPercent
             ))

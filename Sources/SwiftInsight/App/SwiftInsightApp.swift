@@ -4,17 +4,19 @@ import AppKit
 @main
 struct SwiftInsightApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    /// ★ 数据路径（1db629f 已验证）：@StateObject 持有，SwiftUI 才能订阅刷新
     @StateObject private var monitor = ProcessMonitor()
     @StateObject private var controlKeyMonitor = ControlKeyMonitor()
     @StateObject private var menuBar = MenuBarController()
+    @StateObject private var prefs = AppPreferences.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(monitor)
                 .environmentObject(menuBar)
+                .environmentObject(prefs)
                 .frame(minWidth: 1180, minHeight: 680)
+                .id(prefs.language)
                 .onAppear {
                     monitor.start()
                     controlKeyMonitor.start(processMonitor: monitor)
@@ -24,11 +26,14 @@ struct SwiftInsightApp: App {
                         NSApp.windows.first(where: { $0.styleMask.contains(.titled) })?
                             .makeKeyAndOrderFront(nil)
                     }
-                    // 菜单栏：SystemMonitor 的 show(relativeTo:sender.bounds)
                     DispatchQueue.main.async {
                         menuBar.install(monitor: monitor)
+                        prefs.applyTheme()
                     }
                     activateAsRegularApp()
+                }
+                .onChange(of: prefs.language) { _, _ in
+                    menuBar.refreshLocalizedUI()
                 }
         }
         .defaultSize(width: 1360, height: 860)
@@ -36,29 +41,29 @@ struct SwiftInsightApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {}
-            CommandMenu("进程") {
-                Button("刷新") {
+            CommandMenu(L("cmd.process")) {
+                Button(L("cmd.refresh")) {
                     monitor.refresh()
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
                 Divider()
 
-                Button("显示全部") {
+                Button(L("cmd.show_all")) {
                     monitor.categoryFilter = nil
                     monitor.showOnlyApps = false
                 }
-                Button("仅 Apple 系统") {
+                Button(L("cmd.only_system")) {
                     monitor.categoryFilter = .appleSystem
                 }
-                Button("仅 Apple 应用") {
+                Button(L("cmd.only_app")) {
                     monitor.categoryFilter = .appleApp
                 }
-                Button("仅第三方") {
+                Button(L("cmd.only_third")) {
                     monitor.categoryFilter = .thirdParty
                 }
             }
-            CommandMenu("菜单栏") {
+            CommandMenu(L("cmd.menubar")) {
                 ForEach(MenuBarIconMode.allCases) { mode in
                     Button(mode.displayName) {
                         menuBar.iconMode = mode
@@ -71,6 +76,7 @@ struct SwiftInsightApp: App {
             SettingsView()
                 .environmentObject(monitor)
                 .environmentObject(menuBar)
+                .environmentObject(prefs)
         }
     }
 

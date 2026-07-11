@@ -13,9 +13,9 @@ enum ProcessInspector {
         info.openFiles = Array(files.prefix(50))
         info.openFileCount = files.count
         if files.isEmpty {
-            info.sampleNote = "无法读取打开文件（权限不足或进程已退出）"
+            info.sampleNote = L("file.note.fail")
         } else {
-            info.sampleNote = "共 \(files.count) 个打开的文件/套接字"
+            info.sampleNote = String(format: L("file.note.count"), files.count)
         }
         return info
     }
@@ -45,12 +45,12 @@ enum ProcessInspector {
             switch fdInfo.proc_fdtype {
             case PROX_FDTYPE_VNODE:
                 if let path = vnodePath(pid: pid, fd: fd) {
-                    result.append(ProcessOpenFile(id: fd, fd: fd, path: path, kind: "文件"))
+                    result.append(ProcessOpenFile(id: fd, fd: fd, path: path, kind: L("file.kind.file")))
                 }
             case PROX_FDTYPE_SOCKET:
-                result.append(ProcessOpenFile(id: fd, fd: fd, path: "socket", kind: "套接字"))
+                result.append(ProcessOpenFile(id: fd, fd: fd, path: "socket", kind: L("file.kind.socket")))
             case PROX_FDTYPE_PIPE:
-                result.append(ProcessOpenFile(id: fd, fd: fd, path: "pipe", kind: "管道"))
+                result.append(ProcessOpenFile(id: fd, fd: fd, path: "pipe", kind: L("file.kind.pipe")))
             case PROX_FDTYPE_KQUEUE:
                 result.append(ProcessOpenFile(id: fd, fd: fd, path: "kqueue", kind: "kqueue"))
             default:

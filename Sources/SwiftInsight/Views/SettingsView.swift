@@ -3,87 +3,109 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
     @EnvironmentObject private var menuBar: MenuBarController
+    @EnvironmentObject private var prefs: AppPreferences
 
     var body: some View {
         Form {
-            Section("刷新") {
-                Picker("刷新间隔", selection: $monitor.refreshInterval) {
-                    Text("1 秒").tag(1.0)
-                    Text("2 秒").tag(2.0)
-                    Text("5 秒").tag(5.0)
-                    Text("10 秒").tag(10.0)
+            Section(L("settings.appearance")) {
+                Picker(L("settings.language"), selection: $prefs.language) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
                 }
-                LabeledContent("暂停刷新") {
-                    Text("按住 ⌃ Control")
-                        .foregroundStyle(.secondary)
+                Text(L("settings.language.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(L("settings.theme"), selection: $prefs.theme) {
+                    ForEach(AppTheme.allCases) { theme in
+                        Text(theme.displayName).tag(theme)
+                    }
                 }
-                Text("按住 Control 键时界面停止自动刷新，便于查看与选择进程；松开后立即恢复并刷新一次。")
+                Text(L("settings.theme.caption"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("菜单栏") {
-                Picker("图标模式", selection: $menuBar.iconMode) {
+            Section(L("settings.refresh")) {
+                Picker(L("settings.refresh_interval"), selection: $monitor.refreshInterval) {
+                    Text(L("settings.1s")).tag(1.0)
+                    Text(L("settings.2s")).tag(2.0)
+                    Text(L("settings.5s")).tag(5.0)
+                    Text(L("settings.10s")).tag(10.0)
+                }
+                LabeledContent(L("settings.pause_refresh")) {
+                    Text(L("settings.hold_control"))
+                        .foregroundStyle(.secondary)
+                }
+                Text(L("settings.pause.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(L("settings.menubar")) {
+                Picker(L("settings.icon_mode"), selection: $menuBar.iconMode) {
                     ForEach(MenuBarIconMode.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
-                Text("状态栏显示 CPU / 内存迷你条；点击弹出精简面板。关闭主窗口后仍保留菜单栏。")
+                Text(L("settings.menubar.caption"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("特权采样（自用）") {
+            Section(L("settings.helper")) {
                 LabeledContent("Helper") {
                     Text(helperStatusText)
                         .foregroundStyle(monitor.privilegedHelperRoot ? Color.green : Color.secondary)
                 }
-                Text("活动监视器通过 sysmond + 私有 entitlement 读取系统保护进程。第三方 App 默认不行。自用可安装 setuid root Helper，用同一套 libproc 在 root 下采样并回传给主程序。")
+                Text(L("settings.helper.body"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Text("安装（需管理员密码，仅本机自用）：")
+                Text(L("settings.helper.install"))
                     .font(.caption.weight(.semibold))
                 Text("cd \(projectHint) && ./scripts/install-privileged-helper.sh")
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
-                Text("卸载：sudo rm -f /usr/local/libexec/SwiftInsightHelper")
+                Text(L("settings.helper.uninstall"))
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
-                Button("重新检测 Helper") {
+                Button(L("settings.helper.recheck")) {
                     monitor.refreshHelperStatus()
                 }
             }
 
-            Section("关于分类") {
-                Text("SwiftInsight 根据进程路径、Bundle Identifier 与已知系统进程名，区分：")
+            Section(L("settings.classification")) {
+                Text(L("settings.classification.intro"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Label("Apple 系统 — 内核、launchd、系统守护进程与 /System、/usr 等路径", systemImage: "gearshape.2.fill")
+                Label(L("settings.classification.system"), systemImage: "gearshape.2.fill")
                     .font(.callout)
-                Label("Apple 应用 — 带 com.apple.* Bundle ID 或系统自带应用", systemImage: "apple.logo")
+                Label(L("settings.classification.app"), systemImage: "apple.logo")
                     .font(.callout)
-                Label("第三方 — 其余用户安装的应用与进程", systemImage: "app.badge")
+                Label(L("settings.classification.third"), systemImage: "app.badge")
                     .font(.callout)
             }
 
-            Section("关于") {
-                LabeledContent("应用", value: "SwiftInsight")
-                LabeledContent("用途", value: "活动监视器替代 · 侧重 Apple / 第三方资源对比")
+            Section(L("settings.about")) {
+                LabeledContent(L("settings.app"), value: "SwiftInsight")
+                LabeledContent(L("settings.purpose"), value: L("settings.purpose.value"))
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 600)
+        .frame(width: 560, height: 680)
+        .id(prefs.language)
         .onAppear { monitor.refreshHelperStatus() }
     }
 
     private var helperStatusText: String {
         if monitor.privilegedHelperRoot {
-            return "已安装 · root 生效"
+            return L("settings.helper.ok")
         }
         if monitor.privilegedHelperInstalled {
-            return "已找到但非 root（请重新 install）"
+            return L("settings.helper.not_root")
         }
-        return "未安装"
+        return L("settings.helper.missing")
     }
 
     private var projectHint: String {

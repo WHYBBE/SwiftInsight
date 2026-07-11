@@ -311,11 +311,11 @@ final class MenuBarController: NSObject, ObservableObject {
     private func showContextMenu() {
         closePanel()
         let menu = NSMenu()
-        let open = NSMenuItem(title: "打开主窗口", action: #selector(openMainFromMenu), keyEquivalent: "o")
+        let open = NSMenuItem(title: L("mb.open_main"), action: #selector(openMainFromMenu), keyEquivalent: "o")
         open.target = self
         menu.addItem(open)
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "退出 SwiftInsight", action: #selector(quitFromMenu), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L("mb.quit_app"), action: #selector(quitFromMenu), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
@@ -331,7 +331,7 @@ final class MenuBarController: NSObject, ObservableObject {
         let image = MenuBarIconRenderer.image(mode: iconMode, cpu: cpu, memory: mem)
         image.size = NSSize(width: 18, height: 18)
         button.image = image
-        button.toolTip = String(format: "CPU %.0f%% · 内存 %.0f%%", cpu, mem)
+        button.toolTip = String(format: L("status.cpu_mem"), cpu, mem)
     }
 
     func openMainWindow() {
@@ -348,6 +348,15 @@ final class MenuBarController: NSObject, ObservableObject {
     func quit() {
         closePanel()
         NSApp.terminate(nil)
+    }
+
+    /// 语言切换后刷新静态文案
+    func refreshLocalizedUI() {
+        panelContent?.applyLocalization()
+        if let monitor {
+            panelContent?.reload(from: monitor)
+            refreshIcon()
+        }
     }
 }
 
@@ -376,9 +385,9 @@ final class MenuBarPanelView: NSView {
     private let userSysLegend = makeLabel("", size: 11, color: .labelColor)
 
     // 构成
-    private let compositionTitle = makeLabel("构成", size: 11, color: .secondaryLabelColor, weight: .semibold)
+    private let compositionTitle = makeLabel(L("mb.composition"), size: 11, color: .secondaryLabelColor, weight: .semibold)
     private let cpuCompLabel = makeLabel("CPU", size: 10, color: .secondaryLabelColor, weight: .medium)
-    private let memCompLabel = makeLabel("内存", size: 10, color: .secondaryLabelColor, weight: .medium)
+    private let memCompLabel = makeLabel(L("metric.memory"), size: 10, color: .secondaryLabelColor, weight: .medium)
     private let cpuCompositionBar = CompositionBarView()
     private let memCompositionBar = CompositionBarView()
     private let cpuSysLegend = makeLabel("", size: 10, color: .labelColor)
@@ -389,20 +398,20 @@ final class MenuBarPanelView: NSView {
     private let memThirdLegend = makeLabel("", size: 10, color: .labelColor)
 
     // 高占用
-    private let topsTitle = makeLabel("高占用", size: 11, color: .secondaryLabelColor, weight: .semibold)
+    private let topsTitle = makeLabel(L("mb.tops"), size: 11, color: .secondaryLabelColor, weight: .semibold)
     private let cpuTopHeader = makeLabel("CPU", size: 10, color: .secondaryLabelColor, weight: .medium)
-    private let memTopHeader = makeLabel("内存", size: 10, color: .secondaryLabelColor, weight: .medium)
+    private let memTopHeader = makeLabel(L("metric.memory"), size: 10, color: .secondaryLabelColor, weight: .medium)
     private let cpuTopRows: [TopRowView] = (0..<3).map { TopRowView(index: $0 + 1) }
     private let memTopRows: [TopRowView] = (0..<3).map { TopRowView(index: $0 + 1) }
 
-    private let openButton = NSButton(title: "完整窗口", target: nil, action: nil)
-    private let quitButton = NSButton(title: "退出", target: nil, action: nil)
+    private let openButton = NSButton(title: L("mb.full_window"), target: nil, action: nil)
+    private let quitButton = NSButton(title: L("mb.quit"), target: nil, action: nil)
 
     private let memLegendRows: [LegendRowView] = [
-        LegendRowView(color: MenuBarPalette.appMem, title: "App"),
-        LegendRowView(color: MenuBarPalette.wired, title: "联动"),
-        LegendRowView(color: MenuBarPalette.compressed, title: "压缩"),
-        LegendRowView(color: MenuBarPalette.available, title: "可用"),
+        LegendRowView(color: MenuBarPalette.appMem, title: L("metric.app")),
+        LegendRowView(color: MenuBarPalette.wired, title: L("metric.wired")),
+        LegendRowView(color: MenuBarPalette.compressed, title: L("metric.compressed")),
+        LegendRowView(color: MenuBarPalette.available, title: L("metric.available")),
     ]
 
     override init(frame: NSRect) {
@@ -467,6 +476,21 @@ final class MenuBarPanelView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    func applyLocalization() {
+        compositionTitle.stringValue = L("mb.composition")
+        cpuCompLabel.stringValue = "CPU"
+        memCompLabel.stringValue = L("metric.memory")
+        topsTitle.stringValue = L("mb.tops")
+        cpuTopHeader.stringValue = "CPU"
+        memTopHeader.stringValue = L("metric.memory")
+        openButton.title = L("mb.full_window")
+        quitButton.title = L("mb.quit")
+        memLegendRows[0].setTitle(L("metric.app"))
+        memLegendRows[1].setTitle(L("metric.wired"))
+        memLegendRows[2].setTitle(L("metric.compressed"))
+        memLegendRows[3].setTitle(L("metric.available"))
+    }
+
     override var intrinsicContentSize: NSSize { NSSize(width: 360, height: 545) }
 
     func reload(from monitor: ProcessMonitor) {
@@ -487,7 +511,7 @@ final class MenuBarPanelView: NSView {
             color: pressureColor
         )
         pressureRing.toolTip = String(
-            format: "内核档位 %d · memorystatus_level 推算 %.0f%%",
+            format: L("mb.pressure_tip"),
             m.memoryPressureLevel,
             m.memoryPressure
         )
@@ -507,7 +531,7 @@ final class MenuBarPanelView: NSView {
                 (MenuBarPalette.available, availSeg / phys),
             ],
             centerPercent: m.memoryUsedPercent,
-            centerTitle: "内存"
+            centerTitle: L("metric.memory")
         )
 
         memLegendRows[0].setValue(byteString(m.appMemory))
@@ -518,12 +542,12 @@ final class MenuBarPanelView: NSView {
         // CPU
         let hw = m.cpuHWFormatted
         if hw.isEmpty {
-            cpuMetaLabel.stringValue = String(format: "%.0f%% · %d 核", m.cpuUsed, max(m.processorCount, m.coreUsages.count))
+            cpuMetaLabel.stringValue = String(format: "%.0f%% · " + String(format: L("metric.cores"), max(m.processorCount, m.coreUsages.count)), m.cpuUsed)
         } else {
             cpuMetaLabel.stringValue = String(format: "%.0f%% · %@", m.cpuUsed, hw)
         }
         cpuMetaLabel.toolTip = {
-            var parts: [String] = [String(format: "%d 核", max(m.processorCount, m.coreUsages.count))]
+            var parts: [String] = [String(format: L("metric.cores"), max(m.processorCount, m.coreUsages.count))]
             if m.efficiencyFrequencyMHz > 0 { parts.append(String(format: "E %.0f MHz", m.efficiencyFrequencyMHz)) }
             if m.performanceFrequencyMHz > 0 { parts.append(String(format: "P %.0f MHz", m.performanceFrequencyMHz)) }
             if m.cpuTemperatureC > 0 { parts.append(String(format: "%.0f°C", m.cpuTemperatureC)) }
@@ -537,11 +561,11 @@ final class MenuBarPanelView: NSView {
             efficiencyCount: eCount,
             performanceCount: pCount
         )
-        eCoreLegend.attributedStringValue = legend("能效", m.efficiencyCoreUsage, MenuBarPalette.eCore)
-        pCoreLegend.attributedStringValue = legend("性能", m.performanceCoreUsage, MenuBarPalette.pCore)
+        eCoreLegend.attributedStringValue = legend(L("metric.efficiency"), m.efficiencyCoreUsage, MenuBarPalette.eCore)
+        pCoreLegend.attributedStringValue = legend(L("metric.performance"), m.performanceCoreUsage, MenuBarPalette.pCore)
         userSysLegend.attributedStringValue = dualLegend(
-            ("用户", m.cpuUser, MenuBarPalette.userCPU),
-            ("系统", m.cpuSystem, MenuBarPalette.systemCPU)
+            (L("metric.user"), m.cpuUser, MenuBarPalette.userCPU),
+            (L("metric.system"), m.cpuSystem, MenuBarPalette.systemCPU)
         )
 
         // 构成：CPU 相对 100%；内存相对物理内存
@@ -550,9 +574,9 @@ final class MenuBarPanelView: NSView {
             (.systemTeal, s.appleAppCPU),
             (.systemOrange, s.thirdPartyCPU),
         ], scale: 100)
-        cpuSysLegend.attributedStringValue = legend("系统", s.appleSystemCPU, .systemBlue, decimals: 1)
-        cpuAppLegend.attributedStringValue = legend("官方", s.appleAppCPU, .systemTeal, decimals: 1)
-        cpuThirdLegend.attributedStringValue = legend("三方", s.thirdPartyCPU, .systemOrange, decimals: 1)
+        cpuSysLegend.attributedStringValue = legend(L("cat.short.system"), s.appleSystemCPU, .systemBlue, decimals: 1)
+        cpuAppLegend.attributedStringValue = legend(L("cat.short.apple"), s.appleAppCPU, .systemTeal, decimals: 1)
+        cpuThirdLegend.attributedStringValue = legend(L("cat.short.third"), s.thirdPartyCPU, .systemOrange, decimals: 1)
 
         let memScale = max(phys, 1)
         memCompositionBar.setSegments([
@@ -560,9 +584,9 @@ final class MenuBarPanelView: NSView {
             (.systemTeal, Double(s.appleAppMemory) / memScale * 100),
             (.systemOrange, Double(s.thirdPartyMemory) / memScale * 100),
         ], scale: 100)
-        memSysLegend.attributedStringValue = legendBytes("系统", s.appleSystemMemory, .systemBlue)
-        memAppLegend.attributedStringValue = legendBytes("官方", s.appleAppMemory, .systemTeal)
-        memThirdLegend.attributedStringValue = legendBytes("三方", s.thirdPartyMemory, .systemOrange)
+        memSysLegend.attributedStringValue = legendBytes(L("cat.short.system"), s.appleSystemMemory, .systemBlue)
+        memAppLegend.attributedStringValue = legendBytes(L("cat.short.apple"), s.appleAppMemory, .systemTeal)
+        memThirdLegend.attributedStringValue = legendBytes(L("cat.short.third"), s.thirdPartyMemory, .systemOrange)
 
         fillTop(rows: cpuTopRows, items: Array(monitor.rankings.thirdPartyByCPU.prefix(3)))
         fillTop(rows: memTopRows, items: Array(monitor.rankings.thirdPartyByMemory.prefix(3)))
@@ -593,7 +617,7 @@ final class MenuBarPanelView: NSView {
                 row.isHidden = false
                 row.configure(name: items[i].process.name, value: items[i].metricLabel, empty: false)
             } else {
-                row.configure(name: i == 0 ? "暂无" : "", value: "", empty: true)
+                row.configure(name: i == 0 ? L("mb.none") : "", value: "", empty: true)
                 row.isHidden = i > 0
             }
         }
@@ -1037,10 +1061,10 @@ private final class CoreDotsView: NSView {
         if e > 0 || p > 0 {
             let eAvg = e > 0 ? usages.prefix(e).reduce(0, +) / Double(e) : 0
             let pAvg = p > 0 ? usages.suffix(p).reduce(0, +) / Double(p) : 0
-            return String(format: "%d 核 · E %.0f%% · P %.0f%%", usages.count, eAvg, pAvg)
+            return String(format: L("mb.cores_tip"), usages.count, eAvg, pAvg)
         }
         let avg = usages.reduce(0, +) / Double(usages.count)
-        return String(format: "%d 核 · 均值 %.0f%%", usages.count, avg)
+        return String(format: L("mb.cores_avg"), usages.count, avg)
     }
 }
 
@@ -1130,6 +1154,10 @@ private final class LegendRowView: NSView {
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    func setTitle(_ text: String) {
+        titleLabel.stringValue = text
+    }
 
     func setValue(_ text: String) {
         valueLabel.stringValue = text

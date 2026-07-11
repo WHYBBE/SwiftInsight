@@ -36,13 +36,13 @@ struct ContentView: View {
                 }
             }
         }
-        .searchable(text: $monitor.filterText, prompt: "搜索名称、PID、路径、Bundle ID…")
+        .searchable(text: $monitor.filterText, prompt: L("search.prompt"))
         .onChange(of: selectedPID) { _, pid in
             monitor.inspectedPID = pid
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Picker("视图", selection: $monitor.displayMode) {
+                Picker(L("toolbar.view"), selection: $monitor.displayMode) {
                     ForEach(ListDisplayMode.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
@@ -50,10 +50,10 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 180)
 
-                Picker("刷新", selection: $monitor.refreshInterval) {
-                    Text("1 秒").tag(1.0)
-                    Text("2 秒").tag(2.0)
-                    Text("5 秒").tag(5.0)
+                Picker(L("settings.refresh"), selection: $monitor.refreshInterval) {
+                    Text(L("settings.1s")).tag(1.0)
+                    Text(L("settings.2s")).tag(2.0)
+                    Text(L("settings.5s")).tag(5.0)
                 }
                 .pickerStyle(.menu)
                 .frame(width: 80)
@@ -62,18 +62,18 @@ struct ContentView: View {
                 Button {
                     monitor.refresh()
                 } label: {
-                    Label("刷新", systemImage: "arrow.clockwise")
+                    Label(L("toolbar.refresh"), systemImage: "arrow.clockwise")
                 }
-                .help("立即刷新")
+                .help(L("toolbar.refresh.help"))
                 .disabled(monitor.isRefreshPaused)
             }
         }
         .alert(
-            terminateForce ? "强制退出进程？" : "退出进程？",
+            terminateForce ? L("alert.force_quit") : L("alert.quit"),
             isPresented: $showTerminateConfirm
         ) {
-            Button("取消", role: .cancel) {}
-            Button(terminateForce ? "强制退出" : "退出", role: .destructive) {
+            Button(L("alert.cancel"), role: .cancel) {}
+            Button(terminateForce ? L("alert.force_quit_btn") : L("alert.quit_btn"), role: .destructive) {
                 if let pid = selectedPID {
                     monitor.terminate(pid: pid, force: terminateForce)
                     selectedPID = nil
@@ -107,7 +107,7 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: selectedFilter) {
-            Section("分类") {
+            Section(L("sidebar.category")) {
                 ForEach(CategoryFilterItem.allCases) { item in
                     HStack {
                         Label(item.title, systemImage: item.symbolName)
@@ -121,15 +121,15 @@ struct SidebarView: View {
                 }
             }
 
-            Section("筛选") {
-                Toggle("仅显示 App", isOn: $monitor.showOnlyApps)
+            Section(L("sidebar.filter")) {
+                Toggle(L("sidebar.apps_only"), isOn: $monitor.showOnlyApps)
             }
 
-            Section("资源占用对比") {
+            Section(L("sidebar.resource")) {
                 ResourceBreakdownView()
             }
 
-            Section("谁在吃资源") {
+            Section(L("sidebar.who")) {
                 CategoryRankingsView { pid in
                     selectedPID = pid
                     monitor.inspectedPID = pid
@@ -170,13 +170,13 @@ struct ResourceBreakdownView: View {
                 ],
                 total: 100
             )
-            legendRow(color: .blue, title: "系统", value: String(format: "%.1f%%", s.appleSystemCPU))
-            legendRow(color: .cyan, title: "Apple 应用", value: String(format: "%.1f%%", s.appleAppCPU))
-            legendRow(color: .orange, title: "第三方", value: String(format: "%.1f%%", s.thirdPartyCPU))
+            legendRow(color: .blue, title: L("cat.short.system"), value: String(format: "%.1f%%", s.appleSystemCPU))
+            legendRow(color: .cyan, title: L("cat.appleApp"), value: String(format: "%.1f%%", s.appleAppCPU))
+            legendRow(color: .orange, title: L("cat.thirdParty"), value: String(format: "%.1f%%", s.thirdPartyCPU))
 
             Divider().padding(.vertical, 4)
 
-            Text("内存")
+            Text(L("metric.memory"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             let phys = Double(monitor.systemMetrics.physicalMemory)
@@ -188,14 +188,14 @@ struct ResourceBreakdownView: View {
                 ],
                 total: max(phys, 1)
             )
-            legendRow(color: .blue, title: "系统", value: byteString(s.appleSystemMemory))
-            legendRow(color: .cyan, title: "Apple 应用", value: byteString(s.appleAppMemory))
-            legendRow(color: .orange, title: "第三方", value: byteString(s.thirdPartyMemory))
+            legendRow(color: .blue, title: L("cat.short.system"), value: byteString(s.appleSystemMemory))
+            legendRow(color: .cyan, title: L("cat.appleApp"), value: byteString(s.appleAppMemory))
+            legendRow(color: .orange, title: L("cat.thirdParty"), value: byteString(s.thirdPartyMemory))
 
             Divider().padding(.vertical, 4)
 
             HStack {
-                Text("Apple 合计")
+                Text(L("sidebar.apple_total"))
                     .font(.caption.weight(.semibold))
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -277,7 +277,7 @@ struct RefreshStatusView: View {
                 .foregroundStyle(monitor.isRefreshPaused ? Color.primary : Color.secondary)
                 .monospacedDigit()
         }
-        .help(monitor.isRefreshPaused ? "按住 Control 暂停刷新中" : "按住 Control 可暂停自动刷新")
+        .help(monitor.isRefreshPaused ? L("summary.pause_on") : L("summary.pause_off"))
         .animation(.easeInOut(duration: 0.15), value: monitor.isRefreshPaused)
         .accessibilityLabel(monitor.statusText)
     }
@@ -290,21 +290,21 @@ struct SummaryBarView: View {
         let s = monitor.summary
         HStack(spacing: 16) {
             summaryChip(
-                title: "Apple 系统",
+                title: L("cat.appleSystem"),
                 cpu: s.appleSystemCPU,
                 memory: s.appleSystemMemory,
                 count: s.appleSystemCount,
                 color: .blue
             )
             summaryChip(
-                title: "Apple 应用",
+                title: L("cat.appleApp"),
                 cpu: s.appleAppCPU,
                 memory: s.appleAppMemory,
                 count: s.appleAppCount,
                 color: .cyan
             )
             summaryChip(
-                title: "第三方",
+                title: L("cat.thirdParty"),
                 cpu: s.thirdPartyCPU,
                 memory: s.thirdPartyMemory,
                 count: s.thirdPartyCount,
@@ -314,12 +314,12 @@ struct SummaryBarView: View {
             VStack(alignment: .trailing, spacing: 3) {
                 RefreshStatusView()
                 HStack(spacing: 8) {
-                    Text("共 \(s.totalCount) 个进程")
+                    Text(String(format: L("summary.process_count"), s.totalCount))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                     if monitor.lastUpdate != .distantPast {
-                        Text("更新于 \(monitor.lastUpdate, style: .time)")
+                        Text("\(L("summary.updated")) \(monitor.lastUpdate, style: .time)")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -379,7 +379,7 @@ struct ProcessDetailBar: View {
                         .font(.headline)
                     CategoryBadge(category: process.category)
                 }
-                Text(process.path.isEmpty ? "路径不可用" : process.path)
+                Text(process.path.isEmpty ? L("detail.path_unavailable") : process.path)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -389,12 +389,12 @@ struct ProcessDetailBar: View {
             Spacer()
 
             detailStat("PID", "\(process.pid)")
-            detailStat("用户", process.username)
-            detailStat("线程", "\(process.threadCount)")
+            detailStat(L("detail.user"), process.username)
+            detailStat(L("detail.threads"), "\(process.threadCount)")
             detailStat("CPU", process.cpuFormatted)
-            detailStat("内存", process.memoryFormatted)
+            detailStat(L("detail.memory"), process.memoryFormatted)
             if process.metricsFromHelper {
-                detailStat("来源", "root Helper")
+                detailStat(L("detail.source"), "root Helper")
             }
 
             if let bid = process.bundleIdentifier {
@@ -402,20 +402,20 @@ struct ProcessDetailBar: View {
             }
 
             Menu {
-                Button("退出", action: onTerminate)
-                Button("强制退出", role: .destructive, action: onForceQuit)
+                Button(L("alert.quit_btn"), action: onTerminate)
+                Button(L("alert.force_quit_btn"), role: .destructive, action: onForceQuit)
                 Divider()
                 if !process.path.isEmpty {
-                    Button("在 Finder 中显示") {
+                    Button(L("menu.reveal")) {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: process.path)])
                     }
-                    Button("复制路径") {
+                    Button(L("menu.copy_path")) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(process.path, forType: .string)
                     }
                 }
             } label: {
-                Label("操作", systemImage: "ellipsis.circle")
+                Label(L("detail.actions"), systemImage: "ellipsis.circle")
             }
             .menuStyle(.borderlessButton)
             .frame(width: 70)
