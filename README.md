@@ -35,19 +35,24 @@ open Package.swift
 
 ## 权限说明
 
-读取其他用户进程的详细信息时，部分字段可能为空；结束系统进程通常需要更高权限。应用本身不需要特殊沙盒权限即可在本地以普通用户运行并查看本用户及多数系统进程。
+- 本用户与多数进程：可通过 `libproc`（`PROC_PIDTASKINFO`）正常读取 CPU / 内存。
+- **部分 root / 系统保护进程**（如 `amfid`、`trustd`、`sysmond`、XProtect 相关）：普通用户会被内核拒绝，界面显示 **N/A**。
+- **活动监视器能读到**：它是系统组件，通过 `sysmond` + 私有 entitlement（如 `com.apple.sysmond.client`、`com.apple.system-task-ports.read`）。第三方 App 默认没有。
+- **自用提权（推荐）**：安装 setuid root Helper，主程序合并其采样结果，即可覆盖原 N/A 行：
+
+```bash
+./scripts/install-privileged-helper.sh   # 会请求 sudo
+# 卸载
+sudo rm -f /usr/local/libexec/SwiftInsightHelper
+```
+
+Helper 只做一件事：以 root 调用 `PROC_PIDTASKINFO` 并输出 JSON。不涉及公证/上架。
 
 ## 项目结构
 
 ```
-Sources/SwiftInsight/
-  App/SwiftInsightApp.swift      # 入口
-  Models/ProcessModels.swift     # 数据模型
-  Services/
-    ProcessMonitor.swift         # 进程采集（libproc）
-    ProcessClassifier.swift      # Apple / 第三方分类
-  Views/
-    ContentView.swift            # 主界面 + 侧边栏 + 汇总
-    ProcessTableView.swift       # 进程表
-    SettingsView.swift           # 设置
+Sources/SwiftInsight/          # 主 GUI
+Sources/SwiftInsightHelper/    # setuid root 采样助手
+scripts/install-privileged-helper.sh
 ```
+

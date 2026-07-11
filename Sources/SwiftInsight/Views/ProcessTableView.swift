@@ -242,7 +242,10 @@ private struct ProcessNSTable: NSViewRepresentable {
                     id: id,
                     text: process.cpuFormatted,
                     alignment: .right,
-                    color: process.cpuAvailable ? cpuColor(process.cpuPercent) : .tertiaryLabelColor
+                    color: process.cpuAvailable
+                        ? (process.metricsFromHelper ? NSColor.systemPurple : cpuColor(process.cpuPercent))
+                        : .tertiaryLabelColor,
+                    toolTip: process.metricsSourceHint
                 )
             case "memory":
                 return textCell(
@@ -250,7 +253,10 @@ private struct ProcessNSTable: NSViewRepresentable {
                     id: id,
                     text: process.memoryFormatted,
                     alignment: .right,
-                    color: process.memoryAvailable ? .labelColor : .tertiaryLabelColor
+                    color: process.memoryAvailable
+                        ? (process.metricsFromHelper ? NSColor.systemPurple : .labelColor)
+                        : .tertiaryLabelColor,
+                    toolTip: process.metricsSourceHint
                 )
             case "threads":
                 return textCell(
@@ -333,7 +339,8 @@ private struct ProcessNSTable: NSViewRepresentable {
             id: NSUserInterfaceItemIdentifier,
             text: String,
             alignment: NSTextAlignment,
-            color: NSColor
+            color: NSColor,
+            toolTip: String? = nil
         ) -> NSView {
             let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
                 ?? makeTextCell(identifier: id)
@@ -342,6 +349,8 @@ private struct ProcessNSTable: NSViewRepresentable {
             cell.textField?.textColor = color
             cell.textField?.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
             cell.textField?.lineBreakMode = .byTruncatingTail
+            cell.textField?.toolTip = toolTip
+            cell.toolTip = toolTip
             return cell
         }
 
@@ -398,6 +407,7 @@ private struct ProcessNSTable: NSViewRepresentable {
                     || x.process.memoryBytes != y.process.memoryBytes
                     || x.process.cpuAvailable != y.process.cpuAvailable
                     || x.process.memoryAvailable != y.process.memoryAvailable
+                    || x.process.metricsFromHelper != y.process.metricsFromHelper
                     || x.process.threadCount != y.process.threadCount
                     || x.process.username != y.process.username
                     || x.process.category != y.process.category {

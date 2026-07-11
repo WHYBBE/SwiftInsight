@@ -21,6 +21,7 @@ enum ProcessAggregator {
             // 聚合后视为可用（已对可用子进程求和）
             p.cpuAvailable = true
             p.memoryAvailable = true
+            p.metricsFromHelper = false
             return p
         }
     }

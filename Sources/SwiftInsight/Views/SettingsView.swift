@@ -21,6 +21,27 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("特权采样（自用）") {
+                LabeledContent("Helper") {
+                    Text(helperStatusText)
+                        .foregroundStyle(monitor.privilegedHelperRoot ? Color.green : Color.secondary)
+                }
+                Text("活动监视器通过 sysmond + 私有 entitlement 读取系统保护进程。第三方 App 默认不行。自用可安装 setuid root Helper，用同一套 libproc 在 root 下采样并回传给主程序。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Text("安装（需管理员密码，仅本机自用）：")
+                    .font(.caption.weight(.semibold))
+                Text("cd \(projectHint) && ./scripts/install-privileged-helper.sh")
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                Text("卸载：sudo rm -f /usr/local/libexec/SwiftInsightHelper")
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                Button("重新检测 Helper") {
+                    monitor.refreshHelperStatus()
+                }
+            }
+
             Section("关于分类") {
                 Text("SwiftInsight 根据进程路径、Bundle Identifier 与已知系统进程名，区分：")
                     .font(.callout)
@@ -39,6 +60,22 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 400)
+        .frame(width: 560, height: 560)
+        .onAppear { monitor.refreshHelperStatus() }
+    }
+
+    private var helperStatusText: String {
+        if monitor.privilegedHelperRoot {
+            return "已安装 · root 生效"
+        }
+        if monitor.privilegedHelperInstalled {
+            return "已找到但非 root（请重新 install）"
+        }
+        return "未安装"
+    }
+
+    private var projectHint: String {
+        // 尽量给出可复制路径；SPM 运行时可能不在源码目录
+        FileManager.default.currentDirectoryPath
     }
 }

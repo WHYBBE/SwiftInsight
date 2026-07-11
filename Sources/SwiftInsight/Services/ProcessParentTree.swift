@@ -118,6 +118,7 @@ enum ProcessParentTree {
             display.threadCount = node.totalThreads
             display.cpuAvailable = true
             display.memoryAvailable = true
+            display.metricsFromHelper = false
         }
 
         rows.append(ProcessDisplayRow(

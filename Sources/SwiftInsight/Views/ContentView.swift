@@ -400,6 +400,9 @@ struct ProcessDetailBar: View {
             detailStat("线程", "\(process.threadCount)")
             detailStat("CPU", process.cpuFormatted)
             detailStat("内存", process.memoryFormatted)
+            if process.metricsFromHelper {
+                detailStat("来源", "root Helper")
+            }
 
             if let bid = process.bundleIdentifier {
                 detailStat("Bundle", bid)

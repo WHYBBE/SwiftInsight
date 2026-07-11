@@ -58,6 +58,9 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
+    @Published private(set) var privilegedHelperInstalled = false
+    @Published private(set) var privilegedHelperRoot = false
+
     private var timer: Timer?
     private var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
     private var classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)] = [:]
@@ -82,12 +85,19 @@ final class ProcessMonitor: ObservableObject {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        refreshHelperStatus()
         // 预热系统指标基线，避免首帧 CPU 无差分
         sampleQueue.async {
             _ = SystemMetricsCollector.sample()
         }
         refresh()
         restartTimer()
+    }
+
+    func refreshHelperStatus() {
+        let status = PrivilegedMetricsClient.helperStatus()
+        privilegedHelperInstalled = status.installed
+        privilegedHelperRoot = status.root
     }
 
     func stop() {
@@ -267,10 +277,13 @@ final class ProcessMonitor: ObservableObject {
         let usernameCache = self.usernameCache
 
         sampleQueue.async { [weak self] in
+            // 若已安装 setuid helper，用 root 视角补全受限进程指标
+            let privileged = PrivilegedMetricsClient.sampleAll()
             let snapshot = ProcessSampler.collect(
                 previousCPU: previousCPU,
                 classificationCache: classificationCache,
-                usernameCache: usernameCache
+                usernameCache: usernameCache,
+                privileged: privileged
             )
             DispatchQueue.main.async {
                 self?.applySnapshot(snapshot)
@@ -371,7 +384,8 @@ private enum ProcessSampler {
     static func collect(
         previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)],
         classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)],
-        usernameCache: [uid_t: String]
+        usernameCache: [uid_t: String],
+        privileged: PrivilegedMetricsClient.Snapshot? = nil
     ) -> Snapshot {
         let now = Date()
         let wallNow = ProcessInfo.processInfo.systemUptime
@@ -405,7 +419,7 @@ private enum ProcessSampler {
             guard pid > 0, !seen.contains(pid) else { continue }
             seen.insert(pid)
 
-            guard let info = taskInfo(for: pid) else { continue }
+            guard let info = taskInfo(for: pid, privileged: privileged?.byPID[pid]) else { continue }
 
             let path = processPath(pid: pid)
             let name = processName(path: path, fallback: info.name)
@@ -473,7 +487,8 @@ private enum ProcessSampler {
                 username: user,
                 startTime: info.startTime,
                 cpuAvailable: cpuAvailable,
-                memoryAvailable: info.metricsAvailable
+                memoryAvailable: info.metricsAvailable,
+                metricsFromHelper: info.metricsFromHelper
             )
             result.append(process)
             newSummary.add(process)
@@ -504,9 +519,11 @@ private enum ProcessSampler {
         var startTime: Date?
         /// PROC_PIDTASKINFO 是否成功（失败时 CPU/内存不可用）
         var metricsAvailable: Bool
+        /// 是否由 root helper 补全
+        var metricsFromHelper: Bool
     }
 
-    private static func taskInfo(for pid: Int32) -> RawTaskInfo? {
+    private static func taskInfo(for pid: Int32, privileged: PrivilegedMetricsClient.Sample? = nil) -> RawTaskInfo? {
         // 1) 完整 bsdinfo  2) short bsdinfo  3) sysctl(kinfo_proc)
         // 许多系统/特权进程对 PROC_PIDTBSDINFO 会失败；旧逻辑直接丢弃后列表只剩当前用户进程
         var uid: uid_t = 0
@@ -552,6 +569,7 @@ private enum ProcessSampler {
         var userT: Double = 0
         var sysT: Double = 0
         var metricsAvailable = false
+        var metricsFromHelper = false
 
         var taskInfo = proc_taskinfo()
         let taskSize = Int32(MemoryLayout<proc_taskinfo>.stride)
@@ -562,6 +580,16 @@ private enum ProcessSampler {
             userT = Double(taskInfo.pti_total_user) / 1_000_000_000.0
             sysT = Double(taskInfo.pti_total_system) / 1_000_000_000.0
             metricsAvailable = true
+            metricsFromHelper = false
+        } else if let privileged {
+            // root helper 补全：普通用户读不到的系统保护进程
+            resident = privileged.resident
+            virtual = privileged.virtual
+            threads = max(1, privileged.threads)
+            userT = privileged.userTime
+            sysT = privileged.systemTime
+            metricsAvailable = true
+            metricsFromHelper = true
         }
 
         // 受限进程常读不到 taskinfo；线程数尽量回退，CPU/内存标为不可用
@@ -583,7 +611,8 @@ private enum ProcessSampler {
             userTime: userT,
             systemTime: sysT,
             startTime: start,
-            metricsAvailable: metricsAvailable
+            metricsAvailable: metricsAvailable,
+            metricsFromHelper: metricsFromHelper
         )
     }
 

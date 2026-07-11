@@ -7,7 +7,8 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "SwiftInsight", targets: ["SwiftInsight"])
+        .executable(name: "SwiftInsight", targets: ["SwiftInsight"]),
+        .executable(name: "SwiftInsightHelper", targets: ["SwiftInsightHelper"]),
     ],
     targets: [
         .executableTarget(
@@ -15,8 +16,13 @@ let package = Package(
             path: "Sources/SwiftInsight",
             linkerSettings: [
                 .linkedFramework("AppKit"),
-                .linkedFramework("SwiftUI")
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("Security"),
             ]
-        )
+        ),
+        .executableTarget(
+            name: "SwiftInsightHelper",
+            path: "Sources/SwiftInsightHelper"
+        ),
     ]
 )

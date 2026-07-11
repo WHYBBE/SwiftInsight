@@ -132,6 +132,8 @@ struct MonitoredProcess: Identifiable, Hashable {
     /// taskinfo 可读时为 true；权限不足时 CPU/内存显示 N/A
     var cpuAvailable: Bool
     var memoryAvailable: Bool
+    /// 指标是否由 root helper 补全（本地 PROC_PIDTASKINFO 失败后）
+    var metricsFromHelper: Bool
 
     var memoryMB: Double {
         Double(memoryBytes) / 1_048_576.0
@@ -145,6 +147,22 @@ struct MonitoredProcess: Identifiable, Hashable {
 
     var cpuFormatted: String {
         cpuAvailable ? String(format: "%.1f%%", cpuPercent) : "N/A"
+    }
+
+    /// 悬停提示
+    var metricsSourceHint: String? {
+        if metricsFromHelper {
+            return "来自 root Helper 补全（本地无法直接读取该进程 taskinfo）"
+        }
+        if !cpuAvailable || !memoryAvailable {
+            return "无法读取该进程资源：系统保护/其他用户进程。可安装 root Helper 补全。"
+        }
+        return nil
+    }
+
+    var metricsUnavailableReason: String? {
+        if cpuAvailable && memoryAvailable { return nil }
+        return metricsSourceHint
     }
 }
 
