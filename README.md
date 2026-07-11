@@ -1,87 +1,125 @@
 # SwiftInsight
 
-macOS 活动监视器替代应用，使用 **Swift / SwiftUI** 构建。支持 **SwiftPM** 与 **Xcode 工程** 双路径。
+[中文](README.zh-CN.md) · English
 
-## 核心能力
+> Built with Grok 4.5 / OpenCode vibe coding.
 
-- 实时列出系统进程（CPU、内存、线程、用户、PID、路径）
-- **区分 Apple 第一方与第三方进程占用**
-  - **Apple 系统**：`kernel_task`、`launchd`、系统守护进程、`/System`、`/usr` 等
-  - **Apple 应用**：`com.apple.*` Bundle ID、系统自带 App
-  - **第三方**：其余进程
-- 侧边栏汇总 CPU / 内存按类别占比
-- 搜索、分类筛选、排序、退出 / 强制退出进程
-- 菜单栏轻量面板（`NSStatusItem` + `NSPopover`）
+A lightweight **Activity Monitor alternative** for macOS, built with **Swift / SwiftUI**.  
+Focus: **Apple vs third-party** resource breakdown, a stable **menu bar** panel, and optional **root helper** metrics.
 
-## 要求
+
+<p align="center">
+  <img src="docs/preview-main-en.png" alt="SwiftInsight main window" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/preview-menu-en.png" alt="SwiftInsight menu bar panel" width="320" />
+</p>
+
+## Features
+
+### Process monitoring
+- Live process list: CPU, memory, threads, user, PID, path, Bundle ID
+- **Classification**
+  - **Apple System** — kernel, launchd, daemons, `/System`, `/usr`, …
+  - **Apple Apps** — `com.apple.*` / built-in apps
+  - **Third-Party** — everything else
+- Views: **flat list**, **app aggregation tree**, **parent/child tree**
+- Search, category filters, sort, quit / force quit, Finder reveal
+
+### System overview
+- **CPU** — total use, user/system, per-core rings (E/P colors), adaptive layout for high core counts  
+  Optional **frequency / temperature** via privileged helper
+- **Memory** — app / wired / compressed / available, composition bar  
+  **Memory pressure** aligned with Activity Monitor jetsam levels (`kern.memorystatus_vm_pressure_level`)
+- Swap, network throughput, page in/out, load average
+- History charts (CPU, memory, Apple vs third-party CPU)
+- Category rankings (“who’s using resources”)
+
+### Menu bar
+- Status item with CPU / memory mini bars (CPU only / memory only / combined)
+- Compact panel: pressure + memory rings, core strip, category breakdown (vs 100% / physical RAM), top processes
+- Reliable positioning via `NSPanel` (use the packaged `.app`, not raw `swift run`)
+
+### Preferences
+- **Language**: System / 中文 / English  
+- **Theme**: System / Light / Dark  
+- Refresh interval; hold **⌃ Control** to pause auto-refresh  
+- Optional **setuid root Helper** for protected-process metrics and sensors
+
+## Requirements
 
 - macOS 14+
-- Xcode 15+（或带 macOS SDK 的 Swift 5.9+ 工具链）
-- 可选：`xcodegen`（重新生成 `.xcodeproj` 时）
+- Xcode 15+ (or Swift 5.9+ with macOS SDK)
+- Optional: [XcodeGen](https://github.com/yonaskolb/XcodeGen) to regenerate the project
 
-## 构建与运行
+## Build & run
 
-### 推荐：一键 .app（与已验证可用路径相同）
+### Recommended (menu bar works correctly)
 
 ```bash
-./scripts/run-app.sh          # Debug .app 并 open
-./scripts/run-app.sh Release  # Release
+./scripts/run-app.sh          # Debug .app and open
+./scripts/run-app.sh Release
 ```
 
-**不要用** `swift run` 测菜单栏位置（raw 二进制无正式 bundle，坐标不稳）。  
-**不要用** `open Package.swift`（那是 SPM 包，不是 macOS Application）。
+Do **not** use `swift run` to verify menu bar placement (no proper app bundle).  
+Do **not** open `Package.swift` as a macOS Application.
 
 ### Xcode
 
 ```bash
-xcodegen generate          # 改过 project.yml 时
+xcodegen generate             # after editing project.yml
 open SwiftInsight.xcodeproj
 ```
 
-选 scheme **SwiftInsight** → Product → **Clean Build Folder** → ⌘R。  
-若仍异常：删掉 `~/Library/Developer/Xcode/DerivedData/SwiftInsight-*` 后再编。
+Scheme **SwiftInsight** → Clean Build Folder → ⌘R.
 
-### SwiftPM（仅编译/逻辑，不测菜单栏定位）
+### SwiftPM (compile / logic only)
 
 ```bash
 swift build
-swift run --product SwiftInsight   # 数据可用，菜单栏位置可能歪
+swift run --product SwiftInsight
 ```
 
-### 打本地 .app 包（SPM 产物）
+### Local `.app` package
 
 ```bash
 ./scripts/package-app.sh
 open dist/SwiftInsight.app
 ```
 
-## 权限说明
+## Privileged helper (optional)
 
-- 本用户与多数进程：可通过 `libproc`（`PROC_PIDTASKINFO`）正常读取 CPU / 内存。
-- **部分 root / 系统保护进程**：普通用户会被内核拒绝，界面显示 **N/A**。
-- **自用提权**：
+Some root / protected processes return **N/A** for normal users. For personal use:
 
 ```bash
-./scripts/install-privileged-helper.sh
+./scripts/install-privileged-helper.sh   # installs setuid root helper
+# Uninstall:
 sudo rm -f /usr/local/libexec/SwiftInsightHelper
 ```
 
-## 项目结构
+When installed, the helper can also sample **CPU frequency / temperature** (`powermetrics` + SMC).  
+Requires admin password; intended for local self-use only.
+
+## Project layout
 
 ```
-Package.swift                 # SPM
+Package.swift                 # SwiftPM
 project.yml                   # XcodeGen → SwiftInsight.xcodeproj
-SwiftInsight.xcodeproj/       # 生成的 Xcode 工程（与 SPM 共享源码）
-Sources/SwiftInsight/         # 主 GUI
-Sources/SwiftInsightHelper/   # setuid root 采样助手
-scripts/
+SwiftInsight.xcodeproj/       # Xcode project (shared sources)
+Sources/SwiftInsight/         # Main app (SwiftUI + AppKit menu bar)
+Sources/SwiftInsightHelper/   # setuid sampling helper
+scripts/                      # run / package / install helper
+docs/                         # Screenshots
 ```
 
-## 双路径说明
+| | SwiftPM | Xcode / packaged `.app` |
+|--|---------|-------------------------|
+| Config | `Package.swift` | `project.yml` → `.xcodeproj` |
+| Sources | `Sources/` | same |
+| Output | executable | `.app` bundle |
+| Menu bar | may mis-position | recommended |
 
-| | SwiftPM | Xcode 工程 |
-|--|---------|------------|
-| 配置 | `Package.swift` | `project.yml` → `.xcodeproj` |
-| 源码 | `Sources/` 共用 | 同左 |
-| 产物 | 可执行文件 | `.app` bundle |
-| 菜单栏 | 可能异常 | 推荐验证路径 |
+## License
+
+[MIT](LICENSE) © 2026 0x574859
