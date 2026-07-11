@@ -1,6 +1,6 @@
 import AppKit
 
-/// SPM 可执行目标默认不以常规 GUI 应用激活，需显式切换策略才能显示 Dock 图标并获得焦点
+/// 仅负责激活策略；采样与菜单栏由 SwiftUI @StateObject 持有（数据路径已验证）
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -18,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 关闭主窗口后保留菜单栏
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }

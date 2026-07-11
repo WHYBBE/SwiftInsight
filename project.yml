@@ -1,0 +1,87 @@
+# XcodeGen 定义：生成 SwiftInsight.xcodeproj，与 SPM 共享 Sources/
+# 生成：xcodegen generate
+# 打开：open SwiftInsight.xcodeproj
+# SPM 仍可用：swift build / swift run --product SwiftInsight
+
+name: SwiftInsight
+options:
+  bundleIdPrefix: local.swiftinsight
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ALWAYS_SEARCH_USER_PATHS: NO
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  SwiftInsight:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/SwiftInsight
+        type: group
+    settings:
+      base:
+        PRODUCT_NAME: SwiftInsight
+        PRODUCT_BUNDLE_IDENTIFIER: local.swiftinsight.app
+        PRODUCT_MODULE_NAME: SwiftInsight
+        INFOPLIST_KEY_CFBundleDisplayName: SwiftInsight
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
+        # 需要 Dock + 主窗口；菜单栏定位依赖 AppDelegate 内 SystemMonitor 路径
+        INFOPLIST_KEY_LSUIElement: NO
+        INFOPLIST_KEY_NSHighResolutionCapable: YES
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        GENERATE_INFOPLIST_FILE: YES
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+        SWIFT_EMIT_LOC_STRINGS: NO
+        ENABLE_PREVIEWS: NO
+        # 避免 debug dylib 导致静态/单例状态分裂
+        ENABLE_DEBUG_DYLIB: NO
+        # 入口为 @main SwiftInsightApp
+        CREATE_INFOPLIST_SECTION_IN_BINARY: NO
+    scheme:
+      testTargets: []
+      gatherCoverageData: false
+
+  SwiftInsightHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/SwiftInsightHelper
+        type: group
+    settings:
+      base:
+        PRODUCT_NAME: SwiftInsightHelper
+        PRODUCT_BUNDLE_IDENTIFIER: local.swiftinsight.helper
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        MACH_O_TYPE: mh_execute
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path"
+    scheme:
+      testTargets: []
+
+schemes:
+  SwiftInsight:
+    build:
+      targets:
+        SwiftInsight: all
+        SwiftInsightHelper: all
+    run:
+      config: Debug
+      executable: SwiftInsight

@@ -57,6 +57,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <string>14.0</string>
   <key>LSUIElement</key>
   <false/>
+  <!-- 若菜单栏定位仍异常，可改为 true 做纯菜单栏模式验证 -->
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSPrincipalClass</key>
