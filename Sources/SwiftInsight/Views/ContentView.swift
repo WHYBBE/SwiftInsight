@@ -1,0 +1,395 @@
+import SwiftUI
+
+struct ContentView: View {
+    @EnvironmentObject private var monitor: ProcessMonitor
+    @State private var selectedPID: Int32?
+    @State private var showTerminateConfirm = false
+    @State private var terminateForce = false
+
+    var body: some View {
+        NavigationSplitView {
+            SidebarView(selectedPID: $selectedPID)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+        } detail: {
+            VStack(spacing: 0) {
+                SummaryBarView()
+                Divider()
+                ProcessTableView(selectedPID: $selectedPID)
+                if let pid = selectedPID,
+                   let process = monitor.processes.first(where: { $0.pid == pid }) {
+                    Divider()
+                    ProcessDetailBar(
+                        process: process,
+                        onTerminate: {
+                            terminateForce = false
+                            showTerminateConfirm = true
+                        },
+                        onForceQuit: {
+                            terminateForce = true
+                            showTerminateConfirm = true
+                        }
+                    )
+                }
+            }
+        }
+        .searchable(text: $monitor.filterText, prompt: "搜索名称、PID、路径、Bundle ID…")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Picker("刷新", selection: $monitor.refreshInterval) {
+                    Text("1 秒").tag(1.0)
+                    Text("2 秒").tag(2.0)
+                    Text("5 秒").tag(5.0)
+                }
+                .pickerStyle(.menu)
+                .frame(width: 80)
+
+                Button {
+                    monitor.refresh()
+                } label: {
+                    Label("刷新", systemImage: "arrow.clockwise")
+                }
+                .help("立即刷新")
+            }
+        }
+        .alert(
+            terminateForce ? "强制退出进程？" : "退出进程？",
+            isPresented: $showTerminateConfirm
+        ) {
+            Button("取消", role: .cancel) {}
+            Button(terminateForce ? "强制退出" : "退出", role: .destructive) {
+                if let pid = selectedPID {
+                    monitor.terminate(pid: pid, force: terminateForce)
+                    selectedPID = nil
+                }
+            }
+        } message: {
+            if let pid = selectedPID,
+               let p = monitor.processes.first(where: { $0.pid == pid }) {
+                Text("\(p.name) (PID \(p.pid))")
+            }
+        }
+    }
+}
+
+// MARK: - Sidebar
+
+struct SidebarView: View {
+    @EnvironmentObject private var monitor: ProcessMonitor
+    @Binding var selectedPID: Int32?
+
+    var body: some View {
+        List {
+            Section("分类") {
+                categoryRow(nil, title: "全部进程", count: monitor.summary.totalCount, symbol: "list.bullet")
+                categoryRow(.appleSystem, title: "Apple 系统", count: monitor.summary.appleSystemCount, symbol: "gearshape.2.fill")
+                categoryRow(.appleApp, title: "Apple 应用", count: monitor.summary.appleAppCount, symbol: "apple.logo")
+                categoryRow(.thirdParty, title: "第三方", count: monitor.summary.thirdPartyCount, symbol: "app.badge")
+                categoryRow(.unknown, title: "未知", count: monitor.summary.unknownCount, symbol: "questionmark.circle")
+            }
+
+            Section("筛选") {
+                Toggle("仅显示 App", isOn: $monitor.showOnlyApps)
+            }
+
+            Section("资源占用对比") {
+                ResourceBreakdownView()
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationTitle("SwiftInsight")
+    }
+
+    private func categoryRow(_ category: ProcessCategory?, title: String, count: Int, symbol: String) -> some View {
+        Button {
+            monitor.categoryFilter = category
+        } label: {
+            HStack {
+                Label(title, systemImage: symbol)
+                Spacer()
+                Text("\(count)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            (monitor.categoryFilter == category)
+                ? Color.accentColor.opacity(0.15)
+                : Color.clear
+        )
+    }
+}
+
+// MARK: - Resource breakdown
+
+struct ResourceBreakdownView: View {
+    @EnvironmentObject private var monitor: ProcessMonitor
+
+    var body: some View {
+        let s = monitor.summary
+        VStack(alignment: .leading, spacing: 10) {
+            Text("CPU")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            stackedBar(
+                segments: [
+                    (.blue, s.appleSystemCPU),
+                    (.cyan, s.appleAppCPU),
+                    (.orange, s.thirdPartyCPU),
+                    (.gray, s.unknownCPU),
+                ],
+                total: max(s.totalCPU, 1)
+            )
+            legendRow(color: .blue, title: "系统", value: String(format: "%.1f%%", s.appleSystemCPU))
+            legendRow(color: .cyan, title: "Apple 应用", value: String(format: "%.1f%%", s.appleAppCPU))
+            legendRow(color: .orange, title: "第三方", value: String(format: "%.1f%%", s.thirdPartyCPU))
+
+            Divider().padding(.vertical, 4)
+
+            Text("内存")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            stackedBar(
+                segments: [
+                    (.blue, Double(s.appleSystemMemory)),
+                    (.cyan, Double(s.appleAppMemory)),
+                    (.orange, Double(s.thirdPartyMemory)),
+                    (.gray, Double(s.unknownMemory)),
+                ],
+                total: max(Double(s.totalMemory), 1)
+            )
+            legendRow(color: .blue, title: "系统", value: byteString(s.appleSystemMemory))
+            legendRow(color: .cyan, title: "Apple 应用", value: byteString(s.appleAppMemory))
+            legendRow(color: .orange, title: "第三方", value: byteString(s.thirdPartyMemory))
+
+            Divider().padding(.vertical, 4)
+
+            HStack {
+                Text("Apple 合计")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(String(format: "CPU %.1f%%", s.appleCPU))
+                        .font(.caption2)
+                        .monospacedDigit()
+                    Text(byteString(s.appleMemory))
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func stackedBar(segments: [(Color, Double)], total: Double) -> some View {
+        GeometryReader { geo in
+            HStack(spacing: 1) {
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
+                    let w = max(0, geo.size.width * CGFloat(seg.1 / total))
+                    if w > 0.5 {
+                        Rectangle()
+                            .fill(seg.0)
+                            .frame(width: w)
+                    }
+                }
+            }
+            .frame(height: 8)
+            .clipShape(Capsule())
+            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+        }
+        .frame(height: 8)
+    }
+
+    private func legendRow(color: Color, title: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(title).font(.caption2)
+            Spacer()
+            Text(value).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+        }
+    }
+
+    private func byteString(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+    }
+}
+
+// MARK: - Summary bar
+
+struct SummaryBarView: View {
+    @EnvironmentObject private var monitor: ProcessMonitor
+
+    var body: some View {
+        let s = monitor.summary
+        HStack(spacing: 20) {
+            summaryChip(
+                title: "Apple 系统",
+                cpu: s.appleSystemCPU,
+                memory: s.appleSystemMemory,
+                count: s.appleSystemCount,
+                color: .blue
+            )
+            summaryChip(
+                title: "Apple 应用",
+                cpu: s.appleAppCPU,
+                memory: s.appleAppMemory,
+                count: s.appleAppCount,
+                color: .cyan
+            )
+            summaryChip(
+                title: "第三方",
+                cpu: s.thirdPartyCPU,
+                memory: s.thirdPartyMemory,
+                count: s.thirdPartyCount,
+                color: .orange
+            )
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("共 \(s.totalCount) 个进程")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(monitor.lastUpdate, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    private func summaryChip(title: String, cpu: Double, memory: UInt64, count: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Circle().fill(color).frame(width: 6, height: 6)
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text("· \(count)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            HStack(spacing: 10) {
+                Text(String(format: "%.1f%%", cpu))
+                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
+                Text(ByteCountFormatter.string(fromByteCount: Int64(memory), countStyle: .memory))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// MARK: - Detail bar
+
+struct ProcessDetailBar: View {
+    let process: MonitoredProcess
+    var onTerminate: () -> Void
+    var onForceQuit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ProcessIconView(path: process.path, name: process.name)
+                .frame(width: 32, height: 32)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(process.name)
+                        .font(.headline)
+                    CategoryBadge(category: process.category)
+                }
+                Text(process.path.isEmpty ? "路径不可用" : process.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            detailStat("PID", "\(process.pid)")
+            detailStat("用户", process.username)
+            detailStat("线程", "\(process.threadCount)")
+            detailStat("CPU", process.cpuFormatted)
+            detailStat("内存", process.memoryFormatted)
+
+            if let bid = process.bundleIdentifier {
+                detailStat("Bundle", bid)
+            }
+
+            Menu {
+                Button("退出", action: onTerminate)
+                Button("强制退出", role: .destructive, action: onForceQuit)
+                Divider()
+                if !process.path.isEmpty {
+                    Button("在 Finder 中显示") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: process.path)])
+                    }
+                    Button("复制路径") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(process.path, forType: .string)
+                    }
+                }
+            } label: {
+                Label("操作", systemImage: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 70)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    private func detailStat(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text(value)
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+    }
+}
+
+struct CategoryBadge: View {
+    let category: ProcessCategory
+
+    var body: some View {
+        Text(category.shortName)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(badgeColor.opacity(0.15), in: Capsule())
+            .foregroundStyle(badgeColor)
+    }
+
+    private var badgeColor: Color {
+        switch category {
+        case .appleSystem: return .blue
+        case .appleApp: return .cyan
+        case .thirdParty: return .orange
+        case .unknown: return .gray
+        }
+    }
+}
+
+struct ProcessIconView: View {
+    let path: String
+    let name: String
+
+    var body: some View {
+        Image(nsImage: ProcessClassifier.icon(for: path, name: name))
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+    }
+}
