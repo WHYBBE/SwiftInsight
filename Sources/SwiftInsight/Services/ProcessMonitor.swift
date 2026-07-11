@@ -377,6 +377,7 @@ private enum ProcessSampler {
         var threads = 0
         var userT: Double = 0
         var sysT: Double = 0
+        var hasTaskInfo = false
 
         var taskInfo = proc_taskinfo()
         let taskSize = Int32(MemoryLayout<proc_taskinfo>.stride)
@@ -386,6 +387,17 @@ private enum ProcessSampler {
             threads = Int(taskInfo.pti_threadnum)
             userT = Double(taskInfo.pti_total_user) / 1_000_000_000.0
             sysT = Double(taskInfo.pti_total_system) / 1_000_000_000.0
+            hasTaskInfo = true
+        }
+
+        // 受限进程常读不到 taskinfo；0 线程对存活进程不正确
+        if !hasTaskInfo || threads <= 0 {
+            if let listed = listThreadCount(for: pid), listed > 0 {
+                threads = listed
+            } else if threads <= 0 {
+                // 已拿到身份信息说明进程仍存活，至少有 1 条线程
+                threads = 1
+            }
         }
 
         return RawTaskInfo(
@@ -399,6 +411,20 @@ private enum ProcessSampler {
             systemTime: sysT,
             startTime: start
         )
+    }
+
+    /// 通过线程 ID 列表估算线程数（taskinfo 不可用时的回退）
+    private static func listThreadCount(for pid: Int32) -> Int? {
+        var buffer = [UInt64](repeating: 0, count: 1024)
+        let bytes = proc_pidinfo(
+            pid,
+            PROC_PIDLISTTHREADS,
+            0,
+            &buffer,
+            Int32(buffer.count * MemoryLayout<UInt64>.size)
+        )
+        guard bytes > 0 else { return nil }
+        return Int(bytes) / MemoryLayout<UInt64>.size
     }
 
     private static func cString<T>(from value: T, capacity: Int) -> String {
@@ -494,6 +520,7 @@ import Darwin.sys.sysctl
 private let PROC_ALL_PIDS: Int32 = 1
 private let PROC_PIDTBSDINFO: Int32 = 3
 private let PROC_PIDTASKINFO: Int32 = 4
+private let PROC_PIDLISTTHREADS: Int32 = 6
 private let PROC_PIDT_SHORTBSDINFO: Int32 = 13
 private let MAXCOMLEN: Int32 = 16
 
