@@ -246,84 +246,48 @@ enum SystemMetricsCollector {
         metrics.appMemory = appMemory
         metrics.cachedFiles = external
         metrics.usedMemory = used
-        metrics.memoryPressure = computePressure(
-            usedPercent: phys > 0 ? Double(used) / Double(phys) * 100 : 0,
-            availableBytes: free + speculative + external,
-            freeBytes: free + speculative,
-            phys: phys,
-            compressed: compressed,
-            swapUsed: metrics.swapUsed
-        )
+        applyMemoryPressure(&metrics)
     }
 
-    /// 近似活动监视器「内存压力」：可用内存为主，压缩/交换为辅，避免常态压缩被算成 95%
-    private static func computePressure(
-        usedPercent: Double,
-        availableBytes: UInt64,
-        freeBytes: UInt64,
-        phys: UInt64,
-        compressed: UInt64,
-        swapUsed: UInt64
-    ) -> Double {
-        guard phys > 0 else { return 0 }
+    /// 对齐活动监视器 / jetsam：
+    /// - `kern.memorystatus_vm_pressure_level`：1 正常 · 2 警告 · 4 危急（内核离散档）
+    /// - `kern.memorystatus_level`：0–100，越高表示 jetsam 视角越宽松
+    /// 连续百分比 ≈ 100 − memorystatus_level，并按离散档夹紧到活动监视器三色区间
+    private static func applyMemoryPressure(_ metrics: inout SystemMetrics) {
+        let level = sysctlInt("kern.memorystatus_vm_pressure_level")
+        // 未见过 0；缺省当正常
+        let pressureLevel = level > 0 ? level : 1
+        metrics.memoryPressureLevel = pressureLevel
 
-        let availPct = Double(availableBytes) / Double(phys) * 100
-        let freePct = Double(freeBytes) / Double(phys) * 100
-        let compRatio = Double(compressed) / Double(phys)
-        let swapRatio = Double(swapUsed) / Double(phys)
+        var status = sysctlInt("kern.memorystatus_level")
+        if status <= 0 {
+            // 回退：用可用内存比例近似「宽松度」
+            let phys = metrics.physicalMemory
+            if phys > 0 {
+                let avail = Double(metrics.freeMemory &+ metrics.cachedFiles) / Double(phys) * 100
+                status = Int(max(1, min(100, avail)))
+            } else {
+                status = 50
+            }
+        }
+        status = min(100, max(0, status))
 
-        // 1) 内核 memorystatus_level：越高越宽松
-        let level = sysctlInt("kern.memorystatus_level")
-        let fromStatus: Double
-        if level > 0 {
-            fromStatus = Double(100 - min(100, level))
-        } else {
-            fromStatus = max(0, 100 - availPct)
+        // 连续值：与内核 jetsam 水位一致
+        var continuous = Double(100 - status)
+
+        switch pressureLevel {
+        case 4: // 危急 — 活动监视器红区
+            continuous = max(continuous, 85)
+            continuous = min(100, continuous)
+        case 2: // 警告 — 黄区
+            continuous = max(continuous, 50)
+            continuous = min(84, continuous)
+        default: // 正常 — 绿区
+            continuous = min(continuous, 49)
+            continuous = max(0, continuous)
         }
 
-        // 2) 可用内存（空闲 + 文件缓存）— 活动监视器口径的核心
-        // 可用 40%+ → 低压力；20% → 中；<10% → 高
-        let fromAvail: Double
-        if availPct >= 35 {
-            fromAvail = max(0, (50 - availPct) * 0.6)
-        } else if availPct >= 18 {
-            fromAvail = 25 + (35 - availPct) * 1.5
-        } else {
-            fromAvail = 50 + (18 - availPct) * 2.8
-        }
-
-        // 3) 真正空闲页很少时略抬高
-        var freeBoost = 0.0
-        if freePct < 5 { freeBoost = 12 }
-        else if freePct < 10 { freeBoost = 6 }
-
-        // 4) 压缩：只有「可用也紧张」时才明显抬高（macOS 常态就有几 GB 压缩）
-        var compBoost = 0.0
-        if availPct < 25 {
-            if compRatio > 0.25 { compBoost = 8 + (compRatio - 0.25) * 40 }
-            else if compRatio > 0.15 { compBoost = (compRatio - 0.15) * 40 }
-        } else if availPct < 35, compRatio > 0.35 {
-            compBoost = 6
-        }
-
-        // 5) 交换：按占用比例温和抬高，不再「有 swap 就 95」
-        var swapBoost = 0.0
-        if swapUsed > 64 * 1024 * 1024 {
-            swapBoost = min(35, 8 + swapRatio * 120)
-        }
-
-        // 主信号：status 与可用内存各半，再加 boost
-        var pressure = fromStatus * 0.4 + fromAvail * 0.6 + freeBoost + compBoost + swapBoost
-        // 与已用内存弱相关，防止完全脱节（上限温和）
-        pressure = max(pressure, usedPercent * 0.15)
-        // 可用很充裕时压低上限
-        if availPct >= 30 {
-            pressure = min(pressure, 45)
-        }
-        if availPct >= 40 {
-            pressure = min(pressure, 30)
-        }
-        return max(0, min(100, pressure))
+        metrics.memoryPressure = continuous
     }
 
     // MARK: - Swap

@@ -132,9 +132,10 @@ struct SystemOverviewBar: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 2)
-                Text(String(format: "压力 %.0f%%", m.memoryPressure))
+                Text(String(format: "压力 %.0f%% · %@", m.memoryPressure, m.memoryPressureLabel))
                     .font(.system(size: 9).monospacedDigit())
-                    .foregroundStyle(pressureColor(m.memoryPressure))
+                    .foregroundStyle(pressureColor(m))
+                    .help(String(format: "kern.memorystatus_vm_pressure_level = %d", m.memoryPressureLevel))
             }
 
             HStack(alignment: .center, spacing: 8) {
@@ -235,10 +236,12 @@ struct SystemOverviewBar: View {
         return .primary
     }
 
-    private func pressureColor(_ level: Double) -> Color {
-        if level >= 75 { return .red }
-        if level >= 45 { return .orange }
-        return .purple.opacity(0.85)
+    private func pressureColor(_ m: SystemMetrics) -> Color {
+        switch m.memoryPressureLevel {
+        case 4: return .red
+        case 2: return .orange
+        default: return .purple.opacity(0.85)
+        }
     }
 }
 

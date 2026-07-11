@@ -31,8 +31,10 @@ struct SystemMetrics: Equatable {
     var freeMemory: UInt64 = 0
     var swapUsed: UInt64 = 0
     var swapTotal: UInt64 = 0
-    /// 内存压力 0–100（越高越紧张）
+    /// 内存压力 0–100（越高越紧张；对齐 jetsam / 活动监视器）
     var memoryPressure: Double = 0
+    /// 内核 `kern.memorystatus_vm_pressure_level`：1=正常 2=警告 4=危急
+    var memoryPressureLevel: Int = 1
 
     var networkInBytesPerSec: Double = 0
     var networkOutBytesPerSec: Double = 0
@@ -104,6 +106,14 @@ struct SystemMetrics: Equatable {
         case 1: return "热·中"
         case 2: return "热·高"
         case 3: return "热·危"
+        default: return "正常"
+        }
+    }
+    /// 与活动监视器一致的三档压力文案
+    var memoryPressureLabel: String {
+        switch memoryPressureLevel {
+        case 4: return "危急"
+        case 2: return "警告"
         default: return "正常"
         }
     }

@@ -474,10 +474,22 @@ final class MenuBarPanelView: NSView {
         let s = monitor.summary
 
         // 压力环
+        let pressureColor: NSColor = {
+            switch m.memoryPressureLevel {
+            case 4: return .systemRed
+            case 2: return .systemOrange
+            default: return MenuBarPalette.pressure
+            }
+        }()
         pressureRing.configure(
             percent: m.memoryPressure,
-            title: "PRESSURE",
-            color: MenuBarPalette.pressure
+            title: m.memoryPressureLabel.uppercased(),
+            color: pressureColor
+        )
+        pressureRing.toolTip = String(
+            format: "内核档位 %d · memorystatus_level 推算 %.0f%%",
+            m.memoryPressureLevel,
+            m.memoryPressure
         )
 
         // 内存多段环：App / 联动 / 压缩 / 可用
