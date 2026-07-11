@@ -15,6 +15,8 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var systemMetrics = SystemMetrics()
     @Published private(set) var rankings = CategoryRankings()
     @Published private(set) var selectedDetail = ProcessDetailInfo()
+    @Published private(set) var systemHistory: [SystemHistorySample] = []
+    @Published private(set) var processHistory: [MetricSample] = []
     @Published private(set) var lastUpdate: Date = .distantPast
     @Published private(set) var isRunning = false
     /// 按住 Control 时为 true，自动刷新暂停
@@ -38,15 +40,22 @@ final class ProcessMonitor: ObservableObject {
     @Published var showOnlyApps = false {
         didSet { recomputeDisplayed() }
     }
-    /// 列表 / 聚合树
+    /// 列表 / 应用聚合 / PPID 父子树
     @Published var displayMode: ListDisplayMode = .tree {
         didSet { recomputeDisplayed() }
     }
-    /// 展开的聚合节点 key
+    /// 历史窗口
+    @Published var historyWindow: HistoryWindow = .twoMinutes {
+        didSet { publishHistory() }
+    }
+    /// 展开的聚合/父子节点 key
     @Published private(set) var expandedGroups: Set<String> = []
-    /// 当前选中 PID（用于详情增强）
+    /// 当前选中 PID（用于详情增强与历史曲线）
     @Published var inspectedPID: Int32? = nil {
-        didSet { refreshInspectedDetail() }
+        didSet {
+            refreshInspectedDetail()
+            publishHistory()
+        }
     }
 
     private var timer: Timer?
@@ -55,6 +64,7 @@ final class ProcessMonitor: ObservableObject {
     private var usernameCache: [uid_t: String] = [:]
     private var isSampling = false
     private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .userInitiated)
+    private let historyStore = MetricsHistoryStore()
 
     /// 状态栏文案
     var statusText: String {
@@ -171,6 +181,17 @@ final class ProcessMonitor: ObservableObject {
             )
             displayRows = rows
             displayedProcesses = rows.map(\.process)
+        case .parentTree:
+            let forest = ProcessParentTree.buildForest(from: filtered)
+            let rows = ProcessParentTree.flatten(
+                forest,
+                expanded: expandedGroups,
+                sortColumn: sortColumn,
+                sortAscending: sortAscending,
+                rollupWhenCollapsed: false
+            )
+            displayRows = rows
+            displayedProcesses = rows.map(\.process)
         }
     }
 
@@ -266,9 +287,27 @@ final class ProcessMonitor: ObservableObject {
         processes = snapshot.processes
         systemMetrics = snapshot.systemMetrics
         rankings = Self.buildRankings(from: snapshot.processes)
+
+        historyStore.record(
+            system: snapshot.systemMetrics,
+            summary: snapshot.summary,
+            processes: snapshot.processes,
+            watchedPID: inspectedPID
+        )
+        publishHistory()
+
         recomputeDisplayed()
         refreshInspectedDetail()
         isSampling = false
+    }
+
+    private func publishHistory() {
+        systemHistory = historyStore.systemHistory(window: historyWindow)
+        if let pid = inspectedPID {
+            processHistory = historyStore.processHistory(pid: pid, window: historyWindow)
+        } else {
+            processHistory = []
+        }
     }
 
     private func refreshInspectedDetail() {

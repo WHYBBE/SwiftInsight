@@ -228,7 +228,9 @@ struct ProcessDetailPanel: View {
             ProcessDetailBar(process: process, onTerminate: onTerminate, onForceQuit: onForceQuit)
 
             let detail = monitor.selectedDetail
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
+                ProcessHistoryChart(samples: monitor.processHistory, window: monitor.historyWindow)
+
                 HStack(spacing: 16) {
                     if let parent = detail.parentName {
                         labelValue("父进程", "\(parent) (\(process.ppid))")

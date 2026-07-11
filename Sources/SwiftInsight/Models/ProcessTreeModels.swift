@@ -24,6 +24,7 @@ struct ProcessDisplayRow: Identifiable, Hashable {
 enum ListDisplayMode: String, CaseIterable, Identifiable {
     case flat
     case tree
+    case parentTree
 
     var id: String { rawValue }
 
@@ -31,6 +32,63 @@ enum ListDisplayMode: String, CaseIterable, Identifiable {
         switch self {
         case .flat: return "列表"
         case .tree: return "聚合"
+        case .parentTree: return "父子"
+        }
+    }
+}
+
+// MARK: - History samples
+
+struct MetricSample: Identifiable, Equatable {
+    let id: Date
+    let date: Date
+    let cpu: Double
+    let memoryBytes: UInt64
+
+    init(date: Date = Date(), cpu: Double, memoryBytes: UInt64) {
+        self.id = date
+        self.date = date
+        self.cpu = cpu
+        self.memoryBytes = memoryBytes
+    }
+}
+
+struct SystemHistorySample: Identifiable, Equatable {
+    let id: Date
+    let date: Date
+    let cpu: Double
+    let memoryPercent: Double
+    let thirdPartyCPU: Double
+    let appleCPU: Double
+
+    init(
+        date: Date = Date(),
+        cpu: Double,
+        memoryPercent: Double,
+        thirdPartyCPU: Double,
+        appleCPU: Double
+    ) {
+        self.id = date
+        self.date = date
+        self.cpu = cpu
+        self.memoryPercent = memoryPercent
+        self.thirdPartyCPU = thirdPartyCPU
+        self.appleCPU = appleCPU
+    }
+}
+
+enum HistoryWindow: TimeInterval, CaseIterable, Identifiable {
+    case thirtySeconds = 30
+    case twoMinutes = 120
+    case fiveMinutes = 300
+
+    var id: TimeInterval { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .thirtySeconds: return "30 秒"
+        case .twoMinutes: return "2 分钟"
+        case .fiveMinutes: return "5 分钟"
         }
     }
 }

@@ -33,7 +33,7 @@ struct ProcessTableView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 140)
+            .frame(width: 200)
 
             Divider().frame(height: 16)
 

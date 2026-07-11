@@ -14,6 +14,8 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 SystemOverviewBar()
                 Divider()
+                SystemHistoryCharts()
+                Divider()
                 SummaryBarView()
                 Divider()
                 ProcessTableView(selectedPID: $selectedPID)
@@ -46,7 +48,7 @@ struct ContentView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 120)
+                .frame(width: 180)
 
                 Picker("刷新", selection: $monitor.refreshInterval) {
                     Text("1 秒").tag(1.0)
