@@ -7,7 +7,7 @@ import Combine
 final class ProcessMonitor: ObservableObject {
 
     @Published private(set) var processes: [MonitoredProcess] = []
-    /// 已过滤/排序的稳定快照，供 Table 直接使用，避免 body 内反复计算触发重入
+    /// 已过滤/排序的稳定快照，供列表直接使用
     @Published private(set) var displayedProcesses: [MonitoredProcess] = []
     @Published private(set) var summary = ResourceSummary()
     @Published private(set) var lastUpdate: Date = .distantPast
@@ -333,14 +333,44 @@ private enum ProcessSampler {
     }
 
     private static func taskInfo(for pid: Int32) -> RawTaskInfo? {
+        // 1) 完整 bsdinfo  2) short bsdinfo  3) sysctl(kinfo_proc)
+        // 许多系统/特权进程对 PROC_PIDTBSDINFO 会失败；旧逻辑直接丢弃后列表只剩当前用户进程
+        var uid: uid_t = 0
+        var ppid: Int32 = 0
+        var name = ""
+        var start: Date?
+        var gotIdentity = false
+
         var bsdInfo = proc_bsdinfo()
         let bsdSize = Int32(MemoryLayout<proc_bsdinfo>.stride)
-        let bsdResult = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsdInfo, bsdSize)
-        guard bsdResult == bsdSize else { return nil }
+        if proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsdInfo, bsdSize) == bsdSize {
+            uid = bsdInfo.pbi_uid
+            ppid = Int32(bsdInfo.pbi_ppid)
+            name = cString(from: bsdInfo.pbi_name, capacity: Int(MAXCOMLEN) * 2)
+            if name.isEmpty {
+                name = cString(from: bsdInfo.pbi_comm, capacity: Int(MAXCOMLEN))
+            }
+            let sec = TimeInterval(bsdInfo.pbi_start_tvsec)
+            start = sec > 0 ? Date(timeIntervalSince1970: sec) : nil
+            gotIdentity = true
+        } else {
+            var shortInfo = proc_bsdshortinfo()
+            let shortSize = Int32(MemoryLayout<proc_bsdshortinfo>.stride)
+            if proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &shortInfo, shortSize) == shortSize {
+                uid = shortInfo.pbsi_uid
+                ppid = Int32(shortInfo.pbsi_ppid)
+                name = cString(from: shortInfo.pbsi_comm, capacity: Int(MAXCOMLEN))
+                gotIdentity = true
+            } else if let kinfo = kinfoProc(for: pid) {
+                uid = kinfo.uid
+                ppid = kinfo.ppid
+                name = kinfo.name
+                start = kinfo.start
+                gotIdentity = true
+            }
+        }
 
-        var taskInfo = proc_taskinfo()
-        let taskSize = Int32(MemoryLayout<proc_taskinfo>.stride)
-        let taskResult = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &taskInfo, taskSize)
+        guard gotIdentity else { return nil }
 
         var resident: UInt64 = 0
         var virtual: UInt64 = 0
@@ -348,7 +378,9 @@ private enum ProcessSampler {
         var userT: Double = 0
         var sysT: Double = 0
 
-        if taskResult == taskSize {
+        var taskInfo = proc_taskinfo()
+        let taskSize = Int32(MemoryLayout<proc_taskinfo>.stride)
+        if proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &taskInfo, taskSize) == taskSize {
             resident = taskInfo.pti_resident_size
             virtual = taskInfo.pti_virtual_size
             threads = Int(taskInfo.pti_threadnum)
@@ -356,27 +388,58 @@ private enum ProcessSampler {
             sysT = Double(taskInfo.pti_total_system) / 1_000_000_000.0
         }
 
-        let name = withUnsafePointer(to: bsdInfo.pbi_name) { ptr in
-            ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN) * 2) {
-                String(cString: $0)
-            }
-        }
-
-        let start: Date?
-        let sec = TimeInterval(bsdInfo.pbi_start_tvsec)
-        start = sec > 0 ? Date(timeIntervalSince1970: sec) : nil
-
         return RawTaskInfo(
             name: name.isEmpty ? "(\(pid))" : name,
             residentSize: resident,
             virtualSize: virtual,
             threadCount: threads,
-            ppid: Int32(bsdInfo.pbi_ppid),
-            uid: bsdInfo.pbi_uid,
+            ppid: ppid,
+            uid: uid,
             userTime: userT,
             systemTime: sysT,
             startTime: start
         )
+    }
+
+    private static func cString<T>(from value: T, capacity: Int) -> String {
+        withUnsafePointer(to: value) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: capacity) {
+                String(cString: $0)
+            }
+        }
+    }
+
+    private struct KinfoIdentity {
+        var uid: uid_t
+        var ppid: Int32
+        var name: String
+        var start: Date?
+    }
+
+    /// sysctl(KERN_PROC_PID) 兜底
+    private static func kinfoProc(for pid: Int32) -> KinfoIdentity? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size >= MemoryLayout<kinfo_proc>.stride else {
+            return nil
+        }
+
+        var kp = kinfo_proc()
+        var bufferSize = MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 4, &kp, &bufferSize, nil, 0) == 0, bufferSize >= MemoryLayout<kinfo_proc>.stride else {
+            return nil
+        }
+
+        let uid = kp.kp_eproc.e_ucred.cr_uid
+        let ppid = kp.kp_eproc.e_ppid
+        let name = withUnsafePointer(to: kp.kp_proc.p_comm) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN)) {
+                String(cString: $0)
+            }
+        }
+        let sec = TimeInterval(kp.kp_proc.p_starttime.tv_sec)
+        let start = sec > 0 ? Date(timeIntervalSince1970: sec) : nil
+        return KinfoIdentity(uid: uid, ppid: ppid, name: name, start: start)
     }
 
     private static func processPath(pid: Int32) -> String {
@@ -399,14 +462,28 @@ private enum ProcessSampler {
 
     private static func username(for uid: uid_t, cache: inout [uid_t: String]) -> String {
         if let cached = cache[uid] { return cached }
-        if let pw = getpwuid(uid), let name = pw.pointee.pw_name {
-            let s = String(cString: name)
-            cache[uid] = s
-            return s
+
+        // 后台采样线程必须用可重入 API；getpwuid 有静态缓冲，并发时会串名/错名
+        var pwd = passwd()
+        var buffer = [CChar](repeating: 0, count: 16_384)
+        var result: UnsafeMutablePointer<passwd>?
+        let status = getpwuid_r(uid, &pwd, &buffer, buffer.count, &result)
+
+        let name: String
+        if status == 0, result != nil, let cName = pwd.pw_name {
+            let resolved = String(cString: cName)
+            name = resolved.isEmpty ? "\(uid)" : resolved
+        } else if uid == 0 {
+            name = "root"
+        } else if uid == getuid() {
+            let login = NSUserName()
+            name = login.isEmpty ? "\(uid)" : login
+        } else {
+            name = "\(uid)"
         }
-        let s = "\(uid)"
-        cache[uid] = s
-        return s
+
+        cache[uid] = name
+        return name
     }
 }
 
@@ -417,6 +494,7 @@ import Darwin.sys.sysctl
 private let PROC_ALL_PIDS: Int32 = 1
 private let PROC_PIDTBSDINFO: Int32 = 3
 private let PROC_PIDTASKINFO: Int32 = 4
+private let PROC_PIDT_SHORTBSDINFO: Int32 = 13
 private let MAXCOMLEN: Int32 = 16
 
 @_silgen_name("proc_listpids")
@@ -458,6 +536,25 @@ private struct proc_bsdinfo {
     var pbi_nice: Int32 = 0
     var pbi_start_tvsec: UInt64 = 0
     var pbi_start_tvusec: UInt64 = 0
+}
+
+/// 与 sys/proc_info.h 中 struct proc_bsdshortinfo 对齐
+private struct proc_bsdshortinfo {
+    var pbsi_pid: UInt32 = 0
+    var pbsi_ppid: UInt32 = 0
+    var pbsi_pgid: UInt32 = 0
+    var pbsi_status: UInt32 = 0
+    var pbsi_comm: (CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                    CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar) =
+        (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    var pbsi_flags: UInt32 = 0
+    var pbsi_uid: uid_t = 0
+    var pbsi_gid: gid_t = 0
+    var pbsi_ruid: uid_t = 0
+    var pbsi_rgid: gid_t = 0
+    var pbsi_svuid: uid_t = 0
+    var pbsi_svgid: gid_t = 0
+    var pbsi_rfu: UInt32 = 0
 }
 
 private struct proc_taskinfo {
