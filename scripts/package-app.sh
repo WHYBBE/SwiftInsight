@@ -12,6 +12,7 @@ OUT_DIR="${1:-$ROOT_DIR/dist}"
 APP_DIR="$OUT_DIR/$APP_NAME.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RES_DIR="$APP_DIR/Contents/Resources"
+ICON_SRC="$ROOT_DIR/Resources/Assets.xcassets/AppIcon.appiconset"
 
 echo "==> Building release"
 swift build -c release --product "$APP_NAME"
@@ -32,6 +33,26 @@ if [[ -x "$BUILD_DIR/SwiftInsightHelper" ]]; then
   cp "$BUILD_DIR/SwiftInsightHelper" "$MACOS_DIR/SwiftInsightHelper"
 fi
 
+# App 图标 → AppIcon.icns
+if [[ -d "$ICON_SRC" ]] && command -v iconutil >/dev/null 2>&1; then
+  TMP_DIR="$(mktemp -d)"
+  TMP_ICONSET="$TMP_DIR/AppIcon.iconset"
+  mkdir -p "$TMP_ICONSET"
+  cp "$ICON_SRC/appicon-mac-16@1x.png"  "$TMP_ICONSET/icon_16x16.png"
+  cp "$ICON_SRC/appicon-mac-16@2x.png"  "$TMP_ICONSET/icon_16x16@2x.png"
+  cp "$ICON_SRC/appicon-mac-32@1x.png"  "$TMP_ICONSET/icon_32x32.png"
+  cp "$ICON_SRC/appicon-mac-32@2x.png"  "$TMP_ICONSET/icon_32x32@2x.png"
+  cp "$ICON_SRC/appicon-mac-128@1x.png" "$TMP_ICONSET/icon_128x128.png"
+  cp "$ICON_SRC/appicon-mac-128@2x.png" "$TMP_ICONSET/icon_128x128@2x.png"
+  cp "$ICON_SRC/appicon-mac-256@1x.png" "$TMP_ICONSET/icon_256x256.png"
+  cp "$ICON_SRC/appicon-mac-256@2x.png" "$TMP_ICONSET/icon_256x256@2x.png"
+  cp "$ICON_SRC/appicon-mac-512@1x.png" "$TMP_ICONSET/icon_512x512.png"
+  cp "$ICON_SRC/appicon-mac-512@2x.png" "$TMP_ICONSET/icon_512x512@2x.png"
+  iconutil -c icns "$TMP_ICONSET" -o "$RES_DIR/AppIcon.icns"
+  rm -rf "$TMP_DIR"
+  echo "==> Embedded AppIcon.icns"
+fi
+
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,6 +62,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <string>zh-Hans</string>
   <key>CFBundleExecutable</key>
   <string>${APP_NAME}</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
   <string>local.swiftinsight.app</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -57,7 +80,6 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <string>14.0</string>
   <key>LSUIElement</key>
   <false/>
-  <!-- 若菜单栏定位仍异常，可改为 true 做纯菜单栏模式验证 -->
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSPrincipalClass</key>

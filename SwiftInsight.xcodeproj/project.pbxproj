@@ -16,10 +16,12 @@
 		3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */; };
 		418D85A34E1FCAB9CAA57F0D /* PrivilegedMetricsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DBE5F92A0B1D7D58D324D0 /* PrivilegedMetricsClient.swift */; };
 		4235C5321A8908A3CC10D14C /* ProcessMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85859F8AEA91CA33FBF8A8 /* ProcessMonitor.swift */; };
+		7427A4EA6A235A0AA710B193 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 975C60F74A8007EAA57255C0 /* Assets.xcassets */; };
 		7E99347669FEC807DA24B8F9 /* MenuBarIconRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D4EC5D3D734F6F239B4AEC6 /* MenuBarIconRenderer.swift */; };
 		80215845DD5390AA7041CF67 /* MetricsHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1B36FD7551E1B95FD8D86A /* MetricsHistoryStore.swift */; };
 		8DCB595E555B26F7C7AE0440 /* SwiftInsightApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E85304F9E81CF35C5A869C09 /* SwiftInsightApp.swift */; };
 		94F76B2F13DC9F7FB8C87B38 /* MenuBarModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6BEFE8837ECA5AD541C4127 /* MenuBarModels.swift */; };
+		A5857934D2B1A4D92856A001 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 022B9F013BFF33144B99673F /* AppPreferences.swift */; };
 		C4963F9689C39F50AF38FABE /* ProcessTreeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FBBF03CF060A1386E3D38A /* ProcessTreeModels.swift */; };
 		D79CE0EA7A86C7C446E3DA09 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC15AC7DAA9195BA6C32F75 /* AppDelegate.swift */; };
 		DFE0D3EA33F1F861CBC31492 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E1D514C7BD03AB83AFA54D0 /* main.swift */; };
@@ -34,6 +36,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		022B9F013BFF33144B99673F /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		0D4EC5D3D734F6F239B4AEC6 /* MenuBarIconRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIconRenderer.swift; sourceTree = "<group>"; };
 		1A85859F8AEA91CA33FBF8A8 /* ProcessMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMonitor.swift; sourceTree = "<group>"; };
 		2AEFF3D6216326543BDAEFF6 /* ProcessClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessClassifier.swift; sourceTree = "<group>"; };
@@ -52,6 +55,7 @@
 		84F5067E32F8A639C3847E0C /* ProcessTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessTableView.swift; sourceTree = "<group>"; };
 		87498E0FF669121EBEC4EFB0 /* MenuBarCompactView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarCompactView.swift; sourceTree = "<group>"; };
 		8A347488FD28431B5AF1BB05 /* SystemMetricsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMetricsCollector.swift; sourceTree = "<group>"; };
+		975C60F74A8007EAA57255C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97E714F685181505DD145D8B /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		A6BEFE8837ECA5AD541C4127 /* MenuBarModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarModels.swift; sourceTree = "<group>"; };
 		A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -96,6 +100,7 @@
 		5C80CF51B3A5AFE6E164409B = {
 			isa = PBXGroup;
 			children = (
+				9FF4BE7CAE064660E11E066D /* Resources */,
 				7C818014C51EB538236B593E /* Sources */,
 				4877B1121DD0CF02313CD98E /* Products */,
 			);
@@ -124,6 +129,7 @@
 		7DF993F27561EB4D9582756E /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				022B9F013BFF33144B99673F /* AppPreferences.swift */,
 				F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */,
 				0D4EC5D3D734F6F239B4AEC6 /* MenuBarIconRenderer.swift */,
 				3E1B36FD7551E1B95FD8D86A /* MetricsHistoryStore.swift */,
@@ -144,6 +150,14 @@
 				6E1D514C7BD03AB83AFA54D0 /* main.swift */,
 			);
 			path = SwiftInsightHelper;
+			sourceTree = "<group>";
+		};
+		9FF4BE7CAE064660E11E066D /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				975C60F74A8007EAA57255C0 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		B8F9601FB61E3C5C5EAC9CFB /* Views */ = {
@@ -184,6 +198,7 @@
 			buildConfigurationList = 1C9F978703BB3697D99E7B18 /* Build configuration list for PBXNativeTarget "SwiftInsight" */;
 			buildPhases = (
 				50588214276A7B2C9F02176E /* Sources */,
+				F2883B6BB529409EFD315AF0 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -235,6 +250,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		F2883B6BB529409EFD315AF0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7427A4EA6A235A0AA710B193 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		41F007E51DAFFD507D8661D7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -249,6 +275,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D79CE0EA7A86C7C446E3DA09 /* AppDelegate.swift in Sources */,
+				A5857934D2B1A4D92856A001 /* AppPreferences.swift in Sources */,
 				3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */,
 				1DA6048D5C84ABB2033AE485 /* ControlKeyMonitor.swift in Sources */,
 				EC409167A82B234D16F60454 /* HistoryChartsView.swift in Sources */,
