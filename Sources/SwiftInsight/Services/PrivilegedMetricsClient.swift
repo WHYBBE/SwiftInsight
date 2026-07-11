@@ -30,9 +30,11 @@ enum PrivilegedMetricsClient {
 
     private static var cachedSensors = Sensors()
     private static var lastSensorSample: TimeInterval = 0
-    /// powermetrics 较慢，默认 2.5s 节流
-    private static let sensorInterval: TimeInterval = 2.5
+    private static var sensorInFlight = false
+    /// powermetrics 较慢，后台节流
+    private static let sensorInterval: TimeInterval = 3.0
     private static let sensorLock = NSLock()
+    private static let sensorQueue = DispatchQueue(label: "com.swiftinsight.sensors", qos: .utility)
 
     static var helperURL: URL? {
         let candidates = [
@@ -83,18 +85,46 @@ enum PrivilegedMetricsClient {
         return Snapshot(isRoot: (obj["root"] as? Bool) ?? false, byPID: map)
     }
 
-    /// 节流采样频率/温度；失败时返回上次缓存
-    static func sampleSensors(force: Bool = false) -> Sensors {
+    /// 仅读缓存，不阻塞（供主采样路径）
+    static func currentSensors() -> Sensors {
         sensorLock.lock()
         defer { sensorLock.unlock() }
+        return cachedSensors
+    }
+
+    /// 后台刷新频率/温度；不阻塞进程列表采样
+    static func refreshSensorsAsync() {
+        sensorLock.lock()
         let now = ProcessInfo.processInfo.systemUptime
-        if !force, now - lastSensorSample < sensorInterval, lastSensorSample > 0 {
-            return cachedSensors
+        if sensorInFlight || (lastSensorSample > 0 && now - lastSensorSample < sensorInterval) {
+            sensorLock.unlock()
+            return
         }
-        guard let url = helperURL else { return cachedSensors }
-        guard let data = run(url, arguments: ["sensors"]) else { return cachedSensors }
+        sensorInFlight = true
+        sensorLock.unlock()
+
+        sensorQueue.async {
+            let result = sampleSensorsBlocking()
+            sensorLock.lock()
+            if result.cpuFrequencyMHz > 0 || result.cpuTemperatureC > 0 || result.isRoot {
+                var merged = result
+                if merged.cpuFrequencyMHz <= 0 { merged.cpuFrequencyMHz = cachedSensors.cpuFrequencyMHz }
+                if merged.efficiencyFrequencyMHz <= 0 { merged.efficiencyFrequencyMHz = cachedSensors.efficiencyFrequencyMHz }
+                if merged.performanceFrequencyMHz <= 0 { merged.performanceFrequencyMHz = cachedSensors.performanceFrequencyMHz }
+                if merged.cpuTemperatureC <= 0 { merged.cpuTemperatureC = cachedSensors.cpuTemperatureC }
+                cachedSensors = merged
+            }
+            lastSensorSample = ProcessInfo.processInfo.systemUptime
+            sensorInFlight = false
+            sensorLock.unlock()
+        }
+    }
+
+    private static func sampleSensorsBlocking() -> Sensors {
+        guard let url = helperURL else { return Sensors() }
+        guard let data = run(url, arguments: ["sensors"]) else { return Sensors() }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return cachedSensors
+            return Sensors()
         }
         var s = Sensors()
         s.isRoot = (obj["root"] as? Bool) ?? false
@@ -103,13 +133,6 @@ enum PrivilegedMetricsClient {
         s.performanceFrequencyMHz = double(obj["p_freq_mhz"])
         s.cpuTemperatureC = double(obj["cpu_temp_c"])
         s.thermalPressure = (obj["thermal_pressure"] as? String) ?? ""
-        // 保留上次有效值，避免瞬时失败闪空
-        if s.cpuFrequencyMHz <= 0 { s.cpuFrequencyMHz = cachedSensors.cpuFrequencyMHz }
-        if s.efficiencyFrequencyMHz <= 0 { s.efficiencyFrequencyMHz = cachedSensors.efficiencyFrequencyMHz }
-        if s.performanceFrequencyMHz <= 0 { s.performanceFrequencyMHz = cachedSensors.performanceFrequencyMHz }
-        if s.cpuTemperatureC <= 0 { s.cpuTemperatureC = cachedSensors.cpuTemperatureC }
-        cachedSensors = s
-        lastSensorSample = now
         return s
     }
 
@@ -128,15 +151,66 @@ enum PrivilegedMetricsClient {
         let err = Pipe()
         process.standardOutput = out
         process.standardError = err
+
+        // 必须边跑边读：sample JSON ~60–100KB，超过管道缓冲会在 waitUntilExit 上死锁
+        let outHandle = out.fileHandleForReading
+        let errHandle = err.fileHandleForReading
+        let box = OutputBox()
+
+        outHandle.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                box.appendOut(chunk)
+            }
+        }
+        errHandle.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                box.appendErr(chunk)
+            }
+        }
+
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
+            outHandle.readabilityHandler = nil
+            errHandle.readabilityHandler = nil
             return nil
         }
+
+        process.waitUntilExit()
+        outHandle.readabilityHandler = nil
+        errHandle.readabilityHandler = nil
+
+        // 排空残余
+        let tailOut = outHandle.readDataToEndOfFile()
+        if !tailOut.isEmpty { box.appendOut(tailOut) }
+        _ = errHandle.readDataToEndOfFile()
+
         guard process.terminationStatus == 0 else { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        let data = box.outData
         return data.isEmpty ? nil : data
+    }
+
+    private final class OutputBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var out = Data()
+        private var err = Data()
+
+        func appendOut(_ d: Data) {
+            lock.lock(); out.append(d); lock.unlock()
+        }
+        func appendErr(_ d: Data) {
+            lock.lock(); err.append(d); lock.unlock()
+        }
+        var outData: Data {
+            lock.lock(); defer { lock.unlock() }
+            return out
+        }
     }
 
     private static func u64(_ any: Any?) -> UInt64 {

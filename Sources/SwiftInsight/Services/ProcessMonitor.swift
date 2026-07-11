@@ -282,10 +282,10 @@ final class ProcessMonitor: ObservableObject {
         let usernameCache = self.usernameCache
 
         sampleQueue.async { [weak self] in
-            // 若已安装 setuid helper，用 root 视角补全受限进程指标
+            // 进程采样与 sensors 解耦：sensors 走独立队列，避免 powermetrics 卡住刷新
             let privileged = PrivilegedMetricsClient.sampleAll()
-            // 频率/温度节流采样（powermetrics 较慢）
-            let sensors = PrivilegedMetricsClient.sampleSensors()
+            let sensors = PrivilegedMetricsClient.currentSensors()
+            PrivilegedMetricsClient.refreshSensorsAsync()
             let snapshot = ProcessSampler.collect(
                 previousCPU: previousCPU,
                 classificationCache: classificationCache,
@@ -294,7 +294,16 @@ final class ProcessMonitor: ObservableObject {
                 sensors: sensors
             )
             DispatchQueue.main.async {
-                self?.applySnapshot(snapshot)
+                guard let self else { return }
+                self.applySnapshot(snapshot)
+            }
+        }
+
+        // 兜底：采样卡死（如 helper 管道死锁）时强制解锁
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self else { return }
+            if self.isSampling {
+                self.isSampling = false
             }
         }
     }
@@ -320,7 +329,6 @@ final class ProcessMonitor: ObservableObject {
         recomputeDisplayed()
         refreshInspectedDetail()
         isSampling = false
-        // 确保 SwiftUI / NSViewRepresentable 一定收到本帧变更
         objectWillChange.send()
     }
 
@@ -338,9 +346,9 @@ final class ProcessMonitor: ObservableObject {
             selectedDetail = ProcessDetailInfo()
             return
         }
-        // 打开文件扫描较重，放到后台
+        // 打开文件扫描较重；用独立队列，避免堵住进程采样
         let all = processes
-        sampleQueue.async { [weak self] in
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             let detail = ProcessInspector.inspect(pid: pid, processes: all)
             DispatchQueue.main.async {
                 guard let self, self.inspectedPID == pid else { return }
@@ -403,7 +411,7 @@ private enum ProcessSampler {
         var systemMetrics = SystemMetricsCollector.sample()
         PrivilegedMetricsClient.applySensors(sensors, to: &systemMetrics)
 
-        var pids = [Int32](repeating: 0, count: 4096)
+        var pids = [Int32](repeating: 0, count: 8192)
         let count = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, Int32(MemoryLayout<Int32>.size * pids.count))
         guard count > 0 else {
             return Snapshot(

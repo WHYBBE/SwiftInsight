@@ -148,7 +148,6 @@ private enum PowermetricsSensors {
     static func read() -> [String: Any]? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/powermetrics")
-        // 短采样；cpu_power 含频率，thermal 含压力
         process.arguments = [
             "-n", "1",
             "-i", "250",
@@ -159,15 +158,45 @@ private enum PowermetricsSensors {
         let err = Pipe()
         process.standardOutput = out
         process.standardError = err
+
+        // 边跑边读，避免 powermetrics 大输出堵死管道
+        let outHandle = out.fileHandleForReading
+        let errHandle = err.fileHandleForReading
+        let box = DataBox()
+        outHandle.readabilityHandler = { h in
+            let c = h.availableData
+            if c.isEmpty { h.readabilityHandler = nil } else { box.append(c) }
+        }
+        errHandle.readabilityHandler = { h in
+            let c = h.availableData
+            if c.isEmpty { h.readabilityHandler = nil }
+        }
+
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
+            outHandle.readabilityHandler = nil
+            errHandle.readabilityHandler = nil
             return nil
         }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        outHandle.readabilityHandler = nil
+        errHandle.readabilityHandler = nil
+        let tail = outHandle.readDataToEndOfFile()
+        if !tail.isEmpty { box.append(tail) }
+        _ = errHandle.readDataToEndOfFile()
+
+        guard process.terminationStatus == 0 else { return nil }
+        let data = box.data
         guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
         return parse(text)
+    }
+
+    private final class DataBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var buf = Data()
+        func append(_ d: Data) { lock.lock(); buf.append(d); lock.unlock() }
+        var data: Data { lock.lock(); defer { lock.unlock() }; return buf }
     }
 
     static func parse(_ text: String) -> [String: Any] {
