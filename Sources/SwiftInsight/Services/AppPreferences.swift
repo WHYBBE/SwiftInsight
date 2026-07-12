@@ -362,6 +362,7 @@ enum L10n {
         // Menu bar panel
         "mb.open_main": "打开主窗口",
         "mb.quit_app": "退出 SwiftInsight",
+        "mb.github": "GitHub…",
         "mb.composition": "构成",
         "mb.tops": "高占用",
         "mb.full_window": "完整窗口",
@@ -571,6 +572,7 @@ enum L10n {
 
         "mb.open_main": "Open Main Window",
         "mb.quit_app": "Quit SwiftInsight",
+        "mb.github": "GitHub…",
         "mb.composition": "Breakdown",
         "mb.tops": "Top usage",
         "mb.full_window": "Full Window",

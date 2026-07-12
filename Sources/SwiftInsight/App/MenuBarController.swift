@@ -344,27 +344,57 @@ final class MenuBarController: NSObject, ObservableObject {
     private func showContextMenu() {
         closePanel()
         let menu = NSMenu()
-        let open = NSMenuItem(title: L("mb.open_main"), action: #selector(openMainFromMenu), keyEquivalent: "o")
+
+        let open = NSMenuItem(title: L("mb.open_main"), action: #selector(openMainFromMenu), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
+
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: L("mb.quit_app"), action: #selector(quitFromMenu), keyEquivalent: "q")
+
+        let version = NSMenuItem(
+            title: "\(L("settings.version")) \(AppInfo.version)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        version.isEnabled = false
+        menu.addItem(version)
+
+        let github = NSMenuItem(title: L("mb.github"), action: #selector(openGitHubFromMenu), keyEquivalent: "")
+        github.target = self
+        menu.addItem(github)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: L("mb.quit_app"), action: #selector(quitFromMenu), keyEquivalent: "")
         quit.target = self
         menu.addItem(quit)
+
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     @objc private func openMainFromMenu() { openMainWindow() }
     @objc private func quitFromMenu() { quit() }
 
+    @objc private func openGitHubFromMenu() {
+        guard let url = URL(string: "https://github.com/WHYBBE/SwiftInsight") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     private func refreshIcon() {
         guard let monitor, let button = statusItem?.button else { return }
         let cpu = monitor.systemMetrics.cpuUsed
         let mem = monitor.systemMetrics.memoryUsedPercent
         let image = MenuBarIconRenderer.image(mode: iconMode, cpu: cpu, memory: mem)
-        image.size = NSSize(width: 18, height: 18)
         button.image = image
+        button.imagePosition = .imageOnly
         button.toolTip = String(format: L("status.cpu_mem"), cpu, mem)
+        // 单指标图标更宽，双条保持紧凑
+        switch iconMode {
+        case .cpu, .memory:
+            statusItem?.length = MenuBarIconRenderer.singleModeWidth + 2
+        case .combined:
+            statusItem?.length = NSStatusItem.variableLength
+        }
     }
 
     func openMainWindow() {
