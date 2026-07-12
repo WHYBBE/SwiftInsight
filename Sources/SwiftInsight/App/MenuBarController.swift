@@ -351,6 +351,18 @@ final class MenuBarController: NSObject, ObservableObject {
 
         menu.addItem(.separator())
 
+        let launch = NSMenuItem(
+            title: L("mb.launch_at_login"),
+            action: #selector(toggleLaunchAtLoginFromMenu),
+            keyEquivalent: ""
+        )
+        launch.target = self
+        launch.state = LaunchAtLogin.isEnabled ? .on : .off
+        launch.isEnabled = LaunchAtLogin.isAvailable
+        menu.addItem(launch)
+
+        menu.addItem(.separator())
+
         let version = NSMenuItem(
             title: "\(L("settings.version")) \(AppInfo.version)",
             action: nil,
@@ -378,6 +390,10 @@ final class MenuBarController: NSObject, ObservableObject {
     @objc private func openGitHubFromMenu() {
         guard let url = URL(string: "https://github.com/WHYBBE/SwiftInsight") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func toggleLaunchAtLoginFromMenu() {
+        _ = LaunchAtLogin.toggle()
     }
 
     private func refreshIcon() {

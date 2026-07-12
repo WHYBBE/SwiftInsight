@@ -36,6 +36,7 @@ targets:
       - target: SwiftInsightHelper
         link: false
         embed: false
+      - sdk: ServiceManagement.framework
     postBuildScripts:
       - name: Embed SwiftInsightHelper
         basedOnDependencyAnalysis: false

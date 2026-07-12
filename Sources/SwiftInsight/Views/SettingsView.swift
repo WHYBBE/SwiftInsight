@@ -8,6 +8,9 @@ struct SettingsView: View {
     @State private var helperBusy = false
     @State private var helperMessage: String?
     @State private var helperMessageIsError = false
+    @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
+    @State private var launchAtLoginMessage: String?
+    @State private var launchAtLoginMessageIsError = false
 
     var body: some View {
         Form {
@@ -61,6 +64,22 @@ struct SettingsView: View {
                 Text(L("settings.menubar.top_count.caption"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle(L("settings.launch_at_login"), isOn: launchAtLoginBinding)
+                    .disabled(!LaunchAtLogin.isAvailable)
+                Text(L("settings.launch_at_login.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !LaunchAtLogin.isAvailable {
+                    Text(L("settings.launch_at_login.unavailable"))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                if let launchAtLoginMessage {
+                    Text(launchAtLoginMessage)
+                        .font(.caption)
+                        .foregroundStyle(launchAtLoginMessageIsError ? Color.red : Color.secondary)
+                }
                 Text(L("settings.menubar.caption"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -126,7 +145,25 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 560, height: 620)
         .id(prefs.language)
-        .onAppear { monitor.refreshHelperStatus() }
+        .onAppear {
+            monitor.refreshHelperStatus()
+            launchAtLoginEnabled = LaunchAtLogin.isEnabled
+        }
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLoginEnabled },
+            set: { newValue in
+                launchAtLoginMessage = nil
+                let ok = LaunchAtLogin.setEnabled(newValue)
+                launchAtLoginEnabled = LaunchAtLogin.isEnabled
+                if !ok {
+                    launchAtLoginMessageIsError = true
+                    launchAtLoginMessage = L("settings.launch_at_login.failed")
+                }
+            }
+        )
     }
 
     private var helperStatusText: String {

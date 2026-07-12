@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0305BBA2AFD9BB555809C846 /* MainWindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F33F4B0453373F59E272181C /* MainWindowAccessor.swift */; };
+		0A07FE03671414E8C1D32590 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 249F5869F0B09B3223F9E7BE /* ServiceManagement.framework */; };
 		144DD773E067EDE76900AD13 /* ProcessClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AEFF3D6216326543BDAEFF6 /* ProcessClassifier.swift */; };
 		15DC57609520F1399D2DC382 /* ProcessParentTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6209B2338C11A09DB8E09AF0 /* ProcessParentTree.swift */; };
 		1DA6048D5C84ABB2033AE485 /* ControlKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */; };
@@ -17,6 +18,7 @@
 		3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */; };
 		418D85A34E1FCAB9CAA57F0D /* PrivilegedMetricsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DBE5F92A0B1D7D58D324D0 /* PrivilegedMetricsClient.swift */; };
 		4235C5321A8908A3CC10D14C /* ProcessMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85859F8AEA91CA33FBF8A8 /* ProcessMonitor.swift */; };
+		5567623FA667F36567BB6EA1 /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7043061F96ACB3859DF0DBB /* LaunchAtLogin.swift */; };
 		7427A4EA6A235A0AA710B193 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 975C60F74A8007EAA57255C0 /* Assets.xcassets */; };
 		7E99347669FEC807DA24B8F9 /* MenuBarIconRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D4EC5D3D734F6F239B4AEC6 /* MenuBarIconRenderer.swift */; };
 		80215845DD5390AA7041CF67 /* MetricsHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1B36FD7551E1B95FD8D86A /* MetricsHistoryStore.swift */; };
@@ -53,6 +55,7 @@
 		022B9F013BFF33144B99673F /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		0D4EC5D3D734F6F239B4AEC6 /* MenuBarIconRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIconRenderer.swift; sourceTree = "<group>"; };
 		1A85859F8AEA91CA33FBF8A8 /* ProcessMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMonitor.swift; sourceTree = "<group>"; };
+		249F5869F0B09B3223F9E7BE /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		2AEFF3D6216326543BDAEFF6 /* ProcessClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessClassifier.swift; sourceTree = "<group>"; };
 		3052D53A705FE92E1644B0E4 /* SwiftInsightHelper */ = {isa = PBXFileReference; includeInIndex = 0; path = SwiftInsightHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		33DBE5F92A0B1D7D58D324D0 /* PrivilegedMetricsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedMetricsClient.swift; sourceTree = "<group>"; };
@@ -77,12 +80,24 @@
 		A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BF06292ECE6463D7C5ED65E2 /* SystemOverviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemOverviewViews.swift; sourceTree = "<group>"; };
 		CD907D42EBC669C695C7F3B8 /* HistoryChartsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryChartsView.swift; sourceTree = "<group>"; };
+		D7043061F96ACB3859DF0DBB /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
 		E39B9DEF21CF28D94EFF38A4 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		E85304F9E81CF35C5A869C09 /* SwiftInsightApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftInsightApp.swift; sourceTree = "<group>"; };
 		F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlKeyMonitor.swift; sourceTree = "<group>"; };
 		F33F4B0453373F59E272181C /* MainWindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowAccessor.swift; sourceTree = "<group>"; };
 		FC71ACF22310115BAC6B19AA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5B9DC7AEFAB6D9ED94943AAE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A07FE03671414E8C1D32590 /* ServiceManagement.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		0B8768FD7C856A4EB8056899 /* App */ = {
@@ -122,6 +137,7 @@
 			children = (
 				9FF4BE7CAE064660E11E066D /* Resources */,
 				7C818014C51EB538236B593E /* Sources */,
+				A8E2529AF703B9ADAB297F2E /* Frameworks */,
 				4877B1121DD0CF02313CD98E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -152,6 +168,7 @@
 				022B9F013BFF33144B99673F /* AppPreferences.swift */,
 				F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */,
 				7D92568121F5702A494E93B7 /* HelperInstaller.swift */,
+				D7043061F96ACB3859DF0DBB /* LaunchAtLogin.swift */,
 				0D4EC5D3D734F6F239B4AEC6 /* MenuBarIconRenderer.swift */,
 				3E1B36FD7551E1B95FD8D86A /* MetricsHistoryStore.swift */,
 				33DBE5F92A0B1D7D58D324D0 /* PrivilegedMetricsClient.swift */,
@@ -179,6 +196,14 @@
 				975C60F74A8007EAA57255C0 /* Assets.xcassets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A8E2529AF703B9ADAB297F2E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				249F5869F0B09B3223F9E7BE /* ServiceManagement.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		B8F9601FB61E3C5C5EAC9CFB /* Views */ = {
@@ -221,6 +246,7 @@
 			buildPhases = (
 				50588214276A7B2C9F02176E /* Sources */,
 				F2883B6BB529409EFD315AF0 /* Resources */,
+				5B9DC7AEFAB6D9ED94943AAE /* Frameworks */,
 				2856A6EE7BF89D96CC6CA214 /* Embed SwiftInsightHelper */,
 			);
 			buildRules = (
@@ -327,6 +353,7 @@
 				1DA6048D5C84ABB2033AE485 /* ControlKeyMonitor.swift in Sources */,
 				C22C049E564A21238F4A739D /* HelperInstaller.swift in Sources */,
 				EC409167A82B234D16F60454 /* HistoryChartsView.swift in Sources */,
+				5567623FA667F36567BB6EA1 /* LaunchAtLogin.swift in Sources */,
 				0305BBA2AFD9BB555809C846 /* MainWindowAccessor.swift in Sources */,
 				93923CC820EAC8E0E20AC38F /* MainWindowCoordinator.swift in Sources */,
 				FDC0397DD8865DE79B2E4A43 /* MenuBarCompactView.swift in Sources */,
