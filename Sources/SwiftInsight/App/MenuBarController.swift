@@ -476,12 +476,17 @@ final class MenuBarPanelView: NSView {
         memSection.addSubview(pressureRing)
         memSection.addSubview(memoryRing)
         memLegendStack.orientation = .vertical
-        memLegendStack.alignment = .width
+        memLegendStack.alignment = .leading
         memLegendStack.spacing = 6
         memLegendStack.distribution = .fillEqually
-        memLegendRows.forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            memLegendStack.addArrangedSubview($0)
+        memLegendStack.translatesAutoresizingMaskIntoConstraints = true
+        memLegendRows.forEach { row in
+            row.translatesAutoresizingMaskIntoConstraints = false
+            memLegendStack.addArrangedSubview(row)
+            row.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            row.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            // 强制每行与 stack 同宽，数值列才能纵向对齐
+            row.widthAnchor.constraint(equalTo: memLegendStack.widthAnchor).isActive = true
         }
         memSection.addSubview(memLegendStack)
 
@@ -653,13 +658,10 @@ final class MenuBarPanelView: NSView {
         needsLayout = true
     }
 
+    /// 统一 GB 两位小数 + 等宽字体，保证小数点纵向对齐
     private func byteString(_ bytes: UInt64) -> String {
         let gb = Double(bytes) / (1024 * 1024 * 1024)
-        if gb >= 1 {
-            return String(format: "%5.2f GB", gb)
-        }
-        let mb = Double(bytes) / (1024 * 1024)
-        return String(format: "%5.1f MB", mb)
+        return String(format: "%5.2f GB", gb)
     }
 
     private func shortByte(_ bytes: UInt64) -> String {
@@ -1187,6 +1189,8 @@ private final class LegendRowView: NSView {
     private let dot = NSView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let valueLabel = NSTextField(labelWithString: "")
+    /// 固定数值列宽（等宽字体下可容纳 "12.34 GB"）
+    private static let valueColumnWidth: CGFloat = 72
 
     init(color: NSColor, title: String) {
         super.init(frame: .zero)
@@ -1201,13 +1205,15 @@ private final class LegendRowView: NSView {
         titleLabel.isBezeled = false
         titleLabel.isEditable = false
         titleLabel.lineBreakMode = .byClipping
-        valueLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        // 全等宽字体：空格与数字同宽，配合固定格式才能对齐小数点
+        valueLabel.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
         valueLabel.textColor = .labelColor
         valueLabel.alignment = .right
         valueLabel.drawsBackground = false
         valueLabel.isBezeled = false
         valueLabel.isEditable = false
         valueLabel.lineBreakMode = .byClipping
+        valueLabel.usesSingleLineMode = true
         addSubview(dot)
         addSubview(titleLabel)
         addSubview(valueLabel)
@@ -1229,21 +1235,23 @@ private final class LegendRowView: NSView {
 
     override func layout() {
         super.layout()
-        // 固定右侧数值列，保证四行小数点对齐
-        let valueW: CGFloat = 58
-        let padR: CGFloat = 0
-        dot.frame = NSRect(x: 0, y: (bounds.height - 8) / 2, width: 8, height: 8)
+        let valueW = Self.valueColumnWidth
+        let h = bounds.height
+        // 垂直居中文字基线
+        let textH: CGFloat = 14
+        let textY = (h - textH) / 2
+        dot.frame = NSRect(x: 0, y: (h - 8) / 2, width: 8, height: 8)
         valueLabel.frame = NSRect(
-            x: bounds.width - valueW - padR,
-            y: 0,
+            x: bounds.width - valueW,
+            y: textY,
             width: valueW,
-            height: bounds.height
+            height: textH
         )
         titleLabel.frame = NSRect(
             x: 14,
-            y: 0,
-            width: max(20, bounds.width - valueW - padR - 18),
-            height: bounds.height
+            y: textY,
+            width: max(20, bounds.width - valueW - 18),
+            height: textH
         )
     }
 }
