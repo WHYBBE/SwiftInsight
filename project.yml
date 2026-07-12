@@ -32,13 +32,32 @@ targets:
         type: group
       - path: Resources/Assets.xcassets
         type: file
+    dependencies:
+      - target: SwiftInsightHelper
+        link: false
+        embed: false
+    postBuildScripts:
+      - name: Embed SwiftInsightHelper
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          HELPER_SRC="${BUILT_PRODUCTS_DIR}/SwiftInsightHelper"
+          APP_MACOS="${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}/Contents/MacOS"
+          HELPER_DST="${APP_MACOS}/SwiftInsightHelper"
+          if [[ -x "${HELPER_SRC}" ]]; then
+            mkdir -p "${APP_MACOS}"
+            cp -f "${HELPER_SRC}" "${HELPER_DST}"
+            chmod 755 "${HELPER_DST}"
+            echo "Embedded helper -> ${HELPER_DST}"
+          else
+            echo "warning: SwiftInsightHelper not found at ${HELPER_SRC}" >&2
+          fi
     settings:
       base:
         PRODUCT_NAME: SwiftInsight
         PRODUCT_BUNDLE_IDENTIFIER: me.whynbnb.SwiftInsight
         PRODUCT_MODULE_NAME: SwiftInsight
         MARKETING_VERSION: "1.0"
-
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_KEY_CFBundleDisplayName: SwiftInsight
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
@@ -86,8 +105,8 @@ schemes:
   SwiftInsight:
     build:
       targets:
-        SwiftInsight: all
         SwiftInsightHelper: all
+        SwiftInsight: all
     run:
       config: Debug
       executable: SwiftInsight

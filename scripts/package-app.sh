@@ -14,8 +14,9 @@ MACOS_DIR="$APP_DIR/Contents/MacOS"
 RES_DIR="$APP_DIR/Contents/Resources"
 ICON_SRC="$ROOT_DIR/Resources/Assets.xcassets/AppIcon.appiconset"
 
-echo "==> Building release"
+echo "==> Building release (app + helper)"
 swift build -c release --product "$APP_NAME"
+swift build -c release --product SwiftInsightHelper || true
 
 if [[ ! -x "$BIN" ]]; then
   echo "error: binary not found: $BIN" >&2
@@ -28,9 +29,14 @@ mkdir -p "$MACOS_DIR" "$RES_DIR"
 cp "$BIN" "$MACOS_DIR/$APP_NAME"
 chmod +x "$MACOS_DIR/$APP_NAME"
 
-# 可选：一并放入 helper（未 setuid；特权仍需 install-privileged-helper）
-if [[ -x "$BUILD_DIR/SwiftInsightHelper" ]]; then
-  cp "$BUILD_DIR/SwiftInsightHelper" "$MACOS_DIR/SwiftInsightHelper"
+# 内嵌 Helper（未 setuid；用户在 App 设置里一键 root 安装）
+HELPER_BIN="$BUILD_DIR/SwiftInsightHelper"
+if [[ -x "$HELPER_BIN" ]]; then
+  cp "$HELPER_BIN" "$MACOS_DIR/SwiftInsightHelper"
+  chmod 755 "$MACOS_DIR/SwiftInsightHelper"
+  echo "==> Embedded SwiftInsightHelper (install from Settings to enable root)"
+else
+  echo "warning: SwiftInsightHelper not built; privileged install unavailable in this package" >&2
 fi
 
 # App 图标 → AppIcon.icns

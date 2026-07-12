@@ -36,19 +36,20 @@ enum PrivilegedMetricsClient {
     private static let sensorLock = NSLock()
     private static let sensorQueue = DispatchQueue(label: "com.swiftinsight.sensors", qos: .utility)
 
+    /// 运行时优先用已 setuid 安装路径；包内未提权 Helper 不参与采样
     static var helperURL: URL? {
-        let candidates = [
-            defaultHelperPath,
-            (Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("SwiftInsightHelper").path),
-        ]
-        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
-            return URL(fileURLWithPath: path)
+        if FileManager.default.isExecutableFile(atPath: defaultHelperPath) {
+            return URL(fileURLWithPath: defaultHelperPath)
         }
         return nil
     }
 
     static var isHelperInstalled: Bool {
-        helperURL != nil
+        FileManager.default.fileExists(atPath: defaultHelperPath)
+    }
+
+    static var hasBundledHelper: Bool {
+        HelperInstaller.hasBundledHelper
     }
 
     static func helperStatus() -> (installed: Bool, root: Bool) {
