@@ -437,8 +437,39 @@ final class MenuBarPanelView: NSView {
     private var memTopRows: [TopRowView] = []
     private var topCount: Int
 
-    private let openButton = NSButton(title: L("mb.full_window"), target: nil, action: nil)
-    private let quitButton = NSButton(title: L("mb.quit"), target: nil, action: nil)
+    private let openButton = PanelActionButton(
+        title: L("mb.full_window"),
+        systemImage: "macwindow",
+        emphasis: .primary
+    )
+    private let quitButton = PanelActionButton(
+        title: L("mb.quit"),
+        systemImage: "power",
+        emphasis: .destructive
+    )
+    private let activityButton = PanelIconButton(
+        appIcon: AppIconLoader.load(
+            bundleIDs: ["com.apple.ActivityMonitor"],
+            paths: [
+                "/System/Applications/Utilities/Activity Monitor.app",
+                "/Applications/Utilities/Activity Monitor.app",
+            ],
+            fallbackSymbol: "chart.bar.doc.horizontal"
+        ),
+        tooltipKey: "mb.activity_monitor"
+    )
+    private let systemInfoButton = PanelIconButton(
+        appIcon: AppIconLoader.load(
+            bundleIDs: ["com.apple.SystemProfiler"],
+            paths: [
+                "/System/Applications/Utilities/System Information.app",
+                "/Applications/Utilities/System Information.app",
+            ],
+            fallbackSymbol: "info.circle"
+        ),
+        tooltipKey: "mb.system_info"
+    )
+    private let footerDivider = NSView()
 
     private let memLegendRows: [LegendRowView] = [
         LegendRowView(color: MenuBarPalette.appMem, title: L("metric.app")),
@@ -450,8 +481,10 @@ final class MenuBarPanelView: NSView {
     /// 以原先 3 条高占用、高度 545 为基准，每增减 1 条 ±19
     static func preferredHeight(topCount: Int) -> CGFloat {
         let n = AppPreferences.clampedTopCount(topCount)
-        return 545 + CGFloat(n - 3) * 19
+        // 底部工具条略增高
+        return 560 + CGFloat(n - 3) * 19
     }
+
 
     init(frame: NSRect, topCount: Int = AppPreferences.menuBarTopCountDefault) {
         self.topCount = AppPreferences.clampedTopCount(topCount)
@@ -502,20 +535,22 @@ final class MenuBarPanelView: NSView {
             cpuSysLegend, cpuAppLegend, cpuThirdLegend,
             memSysLegend, memAppLegend, memThirdLegend,
             topsTitle, cpuTopHeader, memTopHeader,
-            openButton, quitButton,
+            footerDivider, openButton, quitButton, activityButton, systemInfoButton,
         ]
         rest.forEach { addSubview($0) }
         rebuildTopRows(count: self.topCount)
 
-        openButton.bezelStyle = .rounded
         openButton.target = self
         openButton.action = #selector(openMain)
-        openButton.controlSize = .small
-
-        quitButton.bezelStyle = .rounded
         quitButton.target = self
         quitButton.action = #selector(quit)
-        quitButton.controlSize = .small
+        activityButton.target = self
+        activityButton.action = #selector(openActivityMonitor)
+        systemInfoButton.target = self
+        systemInfoButton.action = #selector(openSystemInformation)
+
+        footerDivider.wantsLayer = true
+        footerDivider.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
 
         pressureRing.lineWidth = 7
         memoryRing.lineWidth = 7
@@ -546,8 +581,10 @@ final class MenuBarPanelView: NSView {
         topsTitle.stringValue = L("mb.tops")
         cpuTopHeader.stringValue = "CPU"
         memTopHeader.stringValue = L("metric.memory")
-        openButton.title = L("mb.full_window")
-        quitButton.title = L("mb.quit")
+        openButton.setTitle(L("mb.full_window"))
+        quitButton.setTitle(L("mb.quit"))
+        activityButton.toolTip = L("mb.activity_monitor")
+        systemInfoButton.toolTip = L("mb.system_info")
         memLegendRows[0].setTitle(L("metric.app"))
         memLegendRows[1].setTitle(L("metric.wired"))
         memLegendRows[2].setTitle(L("metric.compressed"))
@@ -692,8 +729,9 @@ final class MenuBarPanelView: NSView {
         stroke.frame = b.insetBy(dx: 1, dy: 1)
 
         let inset: CGFloat = 12
-        let btnH: CGFloat = 26
-        let btnArea: CGFloat = btnH + 16
+        let btnH: CGFloat = 28
+        let iconBtn: CGFloat = 28
+        let btnArea: CGFloat = btnH + 18
         var y = b.height - inset
 
         // 内存区：环在上、图例在右（加宽后完整显示）
@@ -781,13 +819,60 @@ final class MenuBarPanelView: NSView {
         }
 
         let btnY: CGFloat = 10
-        let quitW: CGFloat = 56
-        openButton.frame = NSRect(x: inset, y: btnY, width: b.width - inset * 2 - quitW - 8, height: btnH)
+        footerDivider.frame = NSRect(x: inset, y: btnY + btnH + 6, width: b.width - inset * 2, height: 1)
+
+        let iconGap: CGFloat = 6
+        activityButton.frame = NSRect(x: inset, y: btnY, width: iconBtn, height: iconBtn)
+        systemInfoButton.frame = NSRect(x: inset + iconBtn + iconGap, y: btnY, width: iconBtn, height: iconBtn)
+
+        let actionGap: CGFloat = 8
+        let actionsLeft = inset + iconBtn * 2 + iconGap + 12
+        let actionsWidth = b.width - actionsLeft - inset
+        let quitW = min(72, max(56, actionsWidth * 0.32))
+        let openW = actionsWidth - quitW - actionGap
+        openButton.frame = NSRect(x: actionsLeft, y: btnY, width: openW, height: btnH)
         quitButton.frame = NSRect(x: b.width - inset - quitW, y: btnY, width: quitW, height: btnH)
     }
 
     @objc private func openMain() { onOpenMain?() }
     @objc private func quit() { onQuit?() }
+
+    @objc private func openActivityMonitor() {
+        openUtilityApp(
+            bundleIDs: ["com.apple.ActivityMonitor"],
+            paths: [
+                "/System/Applications/Utilities/Activity Monitor.app",
+                "/Applications/Utilities/Activity Monitor.app",
+            ]
+        )
+    }
+
+    @objc private func openSystemInformation() {
+        openUtilityApp(
+            bundleIDs: ["com.apple.SystemProfiler"],
+            paths: [
+                "/System/Applications/Utilities/System Information.app",
+                "/Applications/Utilities/System Information.app",
+            ]
+        )
+    }
+
+    private func openUtilityApp(bundleIDs: [String], paths: [String]) {
+        let workspace = NSWorkspace.shared
+        for id in bundleIDs {
+            if let url = workspace.urlForApplication(withBundleIdentifier: id) {
+                workspace.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                return
+            }
+        }
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            if FileManager.default.fileExists(atPath: url.path) {
+                workspace.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                return
+            }
+        }
+    }
 
     private func legend(
         _ title: String,
@@ -1291,6 +1376,244 @@ private final class CompositionBarView: NSView {
     }
 }
 
+
+// MARK: - Footer action buttons
+
+private enum PanelButtonEmphasis {
+    case primary
+    case destructive
+    case neutral
+}
+
+/// 扁平圆角文字按钮（带 SF Symbol）
+private final class PanelActionButton: NSControl {
+    private let iconView = NSImageView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let emphasis: PanelButtonEmphasis
+    private var hovering = false
+
+    init(title: String, systemImage: String, emphasis: PanelButtonEmphasis) {
+        self.emphasis = emphasis
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.masksToBounds = true
+
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        iconView.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)?
+            .withSymbolConfiguration(config)
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.contentTintColor = titleColor(hover: false)
+
+        titleLabel.stringValue = title
+        titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        titleLabel.textColor = titleColor(hover: false)
+        titleLabel.alignment = .center
+        titleLabel.isEditable = false
+        titleLabel.isBezeled = false
+        titleLabel.drawsBackground = false
+        titleLabel.lineBreakMode = .byClipping
+
+        addSubview(iconView)
+        addSubview(titleLabel)
+        applyBackground(hover: false)
+
+        let tracking = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func setTitle(_ text: String) {
+        titleLabel.stringValue = text
+        toolTip = text
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let icon: CGFloat = 12
+        let gap: CGFloat = 5
+        let titleSize = titleLabel.intrinsicContentSize
+        let total = icon + gap + titleSize.width
+        let start = max(8, (bounds.width - total) / 2)
+        let midY = bounds.midY
+        iconView.frame = NSRect(x: start, y: midY - icon / 2, width: icon, height: icon)
+        titleLabel.frame = NSRect(
+            x: start + icon + gap,
+            y: midY - titleSize.height / 2,
+            width: max(20, bounds.width - start - icon - gap - 8),
+            height: titleSize.height
+        )
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        applyBackground(hover: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        applyBackground(hover: false)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        layer?.backgroundColor = pressedBackground().cgColor
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        applyBackground(hover: hovering)
+        let p = convert(event.locationInWindow, from: nil)
+        if bounds.contains(p), let action, let target {
+            _ = target.perform(action, with: self)
+        }
+    }
+
+    private func applyBackground(hover: Bool) {
+        layer?.backgroundColor = (hover ? hoverBackground() : normalBackground()).cgColor
+        let c = titleColor(hover: hover)
+        titleLabel.textColor = c
+        iconView.contentTintColor = c
+    }
+
+    private func normalBackground() -> NSColor {
+        switch emphasis {
+        case .primary: return NSColor.controlAccentColor.withAlphaComponent(0.16)
+        case .destructive: return NSColor.systemRed.withAlphaComponent(0.12)
+        case .neutral: return NSColor.labelColor.withAlphaComponent(0.08)
+        }
+    }
+
+    private func hoverBackground() -> NSColor {
+        switch emphasis {
+        case .primary: return NSColor.controlAccentColor.withAlphaComponent(0.24)
+        case .destructive: return NSColor.systemRed.withAlphaComponent(0.18)
+        case .neutral: return NSColor.labelColor.withAlphaComponent(0.12)
+        }
+    }
+
+    private func pressedBackground() -> NSColor {
+        switch emphasis {
+        case .primary: return NSColor.controlAccentColor.withAlphaComponent(0.32)
+        case .destructive: return NSColor.systemRed.withAlphaComponent(0.26)
+        case .neutral: return NSColor.labelColor.withAlphaComponent(0.16)
+        }
+    }
+
+    private func titleColor(hover: Bool) -> NSColor {
+        switch emphasis {
+        case .primary: return .controlAccentColor
+        case .destructive: return .systemRed
+        case .neutral: return hover ? .labelColor : .secondaryLabelColor
+        }
+    }
+}
+
+/// 加载系统 App 真实图标
+private enum AppIconLoader {
+    struct Result {
+        let image: NSImage
+        let isAppIcon: Bool
+    }
+
+    static func load(bundleIDs: [String], paths: [String], fallbackSymbol: String) -> Result {
+        let workspace = NSWorkspace.shared
+        for id in bundleIDs {
+            if let url = workspace.urlForApplication(withBundleIdentifier: id) {
+                let icon = workspace.icon(forFile: url.path)
+                icon.size = NSSize(width: 32, height: 32)
+                return Result(image: icon, isAppIcon: true)
+            }
+        }
+        for path in paths where FileManager.default.fileExists(atPath: path) {
+            let icon = workspace.icon(forFile: path)
+            icon.size = NSSize(width: 32, height: 32)
+            return Result(image: icon, isAppIcon: true)
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        let symbol = NSImage(systemSymbolName: fallbackSymbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+            ?? NSImage(size: NSSize(width: 18, height: 18))
+        return Result(image: symbol, isAppIcon: false)
+    }
+}
+
+/// 圆角图标快捷按钮（使用 App 图标）
+private final class PanelIconButton: NSControl {
+    private let iconView = NSImageView()
+    private var hovering = false
+    /// 真实 App 图标边距更小；SF Symbol 保持原有留白
+    private let isAppIcon: Bool
+
+    init(appIcon: AppIconLoader.Result, tooltipKey: String) {
+        self.isAppIcon = appIcon.isAppIcon
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.masksToBounds = true
+
+        iconView.image = appIcon.image
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.wantsLayer = true
+        addSubview(iconView)
+        toolTip = L(tooltipKey)
+        applyBackground(hover: false)
+
+        let tracking = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        // App 图标：约 2pt 边距；SF Symbol：约 6.5pt 边距（与原先 15/28 接近）
+        let inset: CGFloat = isAppIcon ? 2 : 6.5
+        let s = max(12, bounds.width - inset * 2)
+        iconView.frame = NSRect(
+            x: (bounds.width - s) / 2,
+            y: (bounds.height - s) / 2,
+            width: s,
+            height: s
+        )
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        applyBackground(hover: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        applyBackground(hover: false)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.16).cgColor
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        applyBackground(hover: hovering)
+        let p = convert(event.locationInWindow, from: nil)
+        if bounds.contains(p), let action, let target {
+            _ = target.perform(action, with: self)
+        }
+    }
+
+    private func applyBackground(hover: Bool) {
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(hover ? 0.12 : 0.07).cgColor
+    }
+}
 
 // MARK: - Top process row
 
