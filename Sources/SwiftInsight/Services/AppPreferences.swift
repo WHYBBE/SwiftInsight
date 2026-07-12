@@ -64,6 +64,10 @@ final class AppPreferences: ObservableObject {
 
     private static let languageKey = "appLanguage"
     private static let themeKey = "appTheme"
+    private static let menuBarTopCountKey = "menuBarTopCount"
+    nonisolated static let menuBarTopCountRange = 3...15
+    nonisolated static let menuBarTopCountDefault = 8
+
 
     @Published var language: AppLanguage {
         didSet {
@@ -80,7 +84,24 @@ final class AppPreferences: ObservableObject {
         }
     }
 
+    /// 菜单栏高占用条数（CPU / 内存各一列），3–15，默认 8
+    @Published var menuBarTopCount: Int {
+        didSet {
+            let clamped = Self.clampedTopCount(menuBarTopCount)
+            if clamped != menuBarTopCount {
+                menuBarTopCount = clamped
+                return
+            }
+            UserDefaults.standard.set(menuBarTopCount, forKey: Self.menuBarTopCountKey)
+        }
+    }
+
     var resolvedLanguage: ResolvedLanguage { language.resolved }
+
+    nonisolated static func clampedTopCount(_ value: Int) -> Int {
+        min(menuBarTopCountRange.upperBound, max(menuBarTopCountRange.lowerBound, value))
+    }
+
 
     private init() {
         let lang: AppLanguage
@@ -100,6 +121,11 @@ final class AppPreferences: ObservableObject {
             th = .system
         }
         theme = th
+
+        let storedTop = UserDefaults.standard.object(forKey: Self.menuBarTopCountKey) as? Int
+            ?? Self.menuBarTopCountDefault
+        menuBarTopCount = Self.clampedTopCount(storedTop)
+
         L10nRuntime.language = lang.resolved
         applyTheme()
     }
@@ -232,6 +258,8 @@ enum L10n {
         "settings.pause.caption": "按住 Control 键时界面停止自动刷新，便于查看与选择进程；松开后立即恢复并刷新一次。",
         "settings.menubar": "菜单栏",
         "settings.icon_mode": "图标模式",
+        "settings.menubar.top_count": "高占用条数",
+        "settings.menubar.top_count.caption": "菜单栏面板中 CPU / 内存高占用列表各显示的条数（3–15）。",
         "settings.menubar.caption": "状态栏显示 CPU / 内存迷你条；点击弹出精简面板。关闭主窗口后仍保留菜单栏。",
         "settings.helper": "特权采样（自用）",
         "settings.helper.body": "部分系统保护进程对普通用户不可读。本 App 可将内嵌 Helper 安装为 setuid root（需管理员密码），用于补全 CPU/内存，并采样频率/温度。无需源码。",
@@ -440,6 +468,8 @@ enum L10n {
         "settings.pause.caption": "Hold Control to pause auto-refresh for inspection; release to resume and refresh once.",
         "settings.menubar": "Menu Bar",
         "settings.icon_mode": "Icon mode",
+        "settings.menubar.top_count": "Top processes",
+        "settings.menubar.top_count.caption": "How many CPU / memory top entries to show in the menu bar panel (3–15).",
         "settings.menubar.caption": "Status item shows CPU/memory mini bars; click for a compact panel. Menu bar stays when the main window is closed.",
         "settings.helper": "Privileged sampling",
         "settings.helper.body": "Some protected processes are unreadable as a normal user. This app can install its bundled Helper as setuid root (admin password) to fill CPU/memory and sample frequency/temperature. No source code needed on the target Mac.",

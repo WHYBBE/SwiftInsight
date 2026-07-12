@@ -357,7 +357,7 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
-    private static func buildRankings(from processes: [MonitoredProcess], limit: Int = 5) -> CategoryRankings {
+    private static func buildRankings(from processes: [MonitoredProcess], limit: Int = 15) -> CategoryRankings {
         func top(_ list: [MonitoredProcess], by key: (MonitoredProcess) -> Double, label: (MonitoredProcess) -> String) -> [ProcessRankingItem] {
             list.sorted { key($0) > key($1) }
                 .prefix(limit)

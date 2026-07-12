@@ -53,6 +53,14 @@ struct SettingsView: View {
                         Text(mode.displayName).tag(mode)
                     }
                 }
+                Picker(L("settings.menubar.top_count"), selection: $prefs.menuBarTopCount) {
+                    ForEach(Array(AppPreferences.menuBarTopCountRange), id: \.self) { n in
+                        Text("\(n)").tag(n)
+                    }
+                }
+                Text(L("settings.menubar.top_count.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text(L("settings.menubar.caption"))
                     .font(.caption)
                     .foregroundStyle(.secondary)

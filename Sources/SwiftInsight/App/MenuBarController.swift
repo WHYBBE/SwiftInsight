@@ -28,8 +28,13 @@ final class MenuBarController: NSObject, ObservableObject {
     private var otherAppObserver: NSObjectProtocol?
 
     private static let modeKey = "menuBarIconMode"
-    private let contentSize = NSSize(width: 360, height: 545)
+    private let panelWidth: CGFloat = 360
     private let panelGap: CGFloat = 4
+
+    private var contentSize: NSSize {
+        let count = AppPreferences.shared.menuBarTopCount
+        return NSSize(width: panelWidth, height: MenuBarPanelView.preferredHeight(topCount: count))
+    }
 
     override init() {
         if let raw = UserDefaults.standard.string(forKey: Self.modeKey),
@@ -46,16 +51,18 @@ final class MenuBarController: NSObject, ObservableObject {
 
         if statusItem != nil {
             bindData(monitor)
+            applyTopCount(AppPreferences.shared.menuBarTopCount, reload: true)
             return
         }
 
-        let content = MenuBarPanelView(frame: NSRect(origin: .zero, size: contentSize))
+        let size = contentSize
+        let content = MenuBarPanelView(frame: NSRect(origin: .zero, size: size), topCount: AppPreferences.shared.menuBarTopCount)
         content.onOpenMain = { [weak self] in self?.openMainWindow() }
         content.onQuit = { [weak self] in self?.quit() }
         panelContent = content
 
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: contentSize),
+            contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -71,7 +78,7 @@ final class MenuBarController: NSObject, ObservableObject {
         panel.isMovableByWindowBackground = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.contentView = content
-        panel.setContentSize(contentSize)
+        panel.setContentSize(size)
         self.panel = panel
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -87,6 +94,32 @@ final class MenuBarController: NSObject, ObservableObject {
 
         installFocusObservers()
         bindData(monitor)
+        bindPreferences()
+    }
+
+    private func bindPreferences() {
+        AppPreferences.shared.$menuBarTopCount
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] count in
+                self?.applyTopCount(count, reload: true)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func applyTopCount(_ count: Int, reload: Bool) {
+        let size = NSSize(width: panelWidth, height: MenuBarPanelView.preferredHeight(topCount: count))
+        panelContent?.setTopCount(count)
+        panel?.setContentSize(size)
+        panelContent?.frame = NSRect(origin: .zero, size: size)
+        if reload, let monitor {
+            panelContent?.reload(from: monitor)
+        }
+        // 若面板正显示，重新定位
+        if panel?.isVisible == true, let button = statusItem?.button {
+            let frame = panelFrame(relativeTo: button)
+            panel?.setFrame(frame, display: true)
+        }
     }
 
     /// 失焦 / 切空间 / 其它 App 激活时自动关面板
@@ -400,8 +433,9 @@ final class MenuBarPanelView: NSView {
     private let topsTitle = makeLabel(L("mb.tops"), size: 11, color: .secondaryLabelColor, weight: .semibold)
     private let cpuTopHeader = makeLabel("CPU", size: 10, color: .secondaryLabelColor, weight: .medium)
     private let memTopHeader = makeLabel(L("metric.memory"), size: 10, color: .secondaryLabelColor, weight: .medium)
-    private let cpuTopRows: [TopRowView] = (0..<3).map { TopRowView(index: $0 + 1) }
-    private let memTopRows: [TopRowView] = (0..<3).map { TopRowView(index: $0 + 1) }
+    private var cpuTopRows: [TopRowView] = []
+    private var memTopRows: [TopRowView] = []
+    private var topCount: Int
 
     private let openButton = NSButton(title: L("mb.full_window"), target: nil, action: nil)
     private let quitButton = NSButton(title: L("mb.quit"), target: nil, action: nil)
@@ -413,7 +447,14 @@ final class MenuBarPanelView: NSView {
         LegendRowView(color: MenuBarPalette.available, title: L("metric.available")),
     ]
 
-    override init(frame: NSRect) {
+    /// 以原先 3 条高占用、高度 545 为基准，每增减 1 条 ±19
+    static func preferredHeight(topCount: Int) -> CGFloat {
+        let n = AppPreferences.clampedTopCount(topCount)
+        return 545 + CGFloat(n - 3) * 19
+    }
+
+    init(frame: NSRect, topCount: Int = AppPreferences.menuBarTopCountDefault) {
+        self.topCount = AppPreferences.clampedTopCount(topCount)
         super.init(frame: frame)
         wantsLayer = true
 
@@ -456,8 +497,10 @@ final class MenuBarPanelView: NSView {
             cpuSysLegend, cpuAppLegend, cpuThirdLegend,
             memSysLegend, memAppLegend, memThirdLegend,
             topsTitle, cpuTopHeader, memTopHeader,
-        ] + cpuTopRows + memTopRows + [openButton, quitButton]
+            openButton, quitButton,
+        ]
         rest.forEach { addSubview($0) }
+        rebuildTopRows(count: self.topCount)
 
         openButton.bezelStyle = .rounded
         openButton.target = self
@@ -475,6 +518,22 @@ final class MenuBarPanelView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    func setTopCount(_ count: Int) {
+        let n = AppPreferences.clampedTopCount(count)
+        guard n != topCount else { return }
+        topCount = n
+        rebuildTopRows(count: n)
+        needsLayout = true
+    }
+
+    private func rebuildTopRows(count: Int) {
+        cpuTopRows.forEach { $0.removeFromSuperview() }
+        memTopRows.forEach { $0.removeFromSuperview() }
+        cpuTopRows = (0..<count).map { TopRowView(index: $0 + 1) }
+        memTopRows = (0..<count).map { TopRowView(index: $0 + 1) }
+        (cpuTopRows + memTopRows).forEach { addSubview($0) }
+    }
+
     func applyLocalization() {
         compositionTitle.stringValue = L("mb.composition")
         cpuCompLabel.stringValue = "CPU"
@@ -490,7 +549,9 @@ final class MenuBarPanelView: NSView {
         memLegendRows[3].setTitle(L("metric.available"))
     }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 360, height: 545) }
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 360, height: Self.preferredHeight(topCount: topCount))
+    }
 
     func reload(from monitor: ProcessMonitor) {
         let m = monitor.systemMetrics
@@ -587,8 +648,8 @@ final class MenuBarPanelView: NSView {
         memAppLegend.attributedStringValue = legendBytes(L("cat.short.apple"), s.appleAppMemory, .systemTeal)
         memThirdLegend.attributedStringValue = legendBytes(L("cat.short.third"), s.thirdPartyMemory, .systemOrange)
 
-        fillTop(rows: cpuTopRows, items: Array(monitor.rankings.thirdPartyByCPU.prefix(3)))
-        fillTop(rows: memTopRows, items: Array(monitor.rankings.thirdPartyByMemory.prefix(3)))
+        fillTop(rows: cpuTopRows, items: Array(monitor.rankings.thirdPartyByCPU.prefix(topCount)))
+        fillTop(rows: memTopRows, items: Array(monitor.rankings.thirdPartyByMemory.prefix(topCount)))
         needsLayout = true
     }
 
@@ -704,13 +765,14 @@ final class MenuBarPanelView: NSView {
         // 高占用与按钮之间留足空隙
         let topsBottom = btnArea + 4
         let rowH: CGFloat = 17
-        for i in 0..<3 {
+        let rowCount = max(cpuTopRows.count, memTopRows.count)
+        for i in 0..<rowCount {
             let rowY = y - rowH
             if rowY < topsBottom { break }
-            if !cpuTopRows[i].isHidden {
+            if i < cpuTopRows.count, !cpuTopRows[i].isHidden {
                 cpuTopRows[i].frame = NSRect(x: leftX, y: rowY, width: colW, height: 16)
             }
-            if !memTopRows[i].isHidden {
+            if i < memTopRows.count, !memTopRows[i].isHidden {
                 memTopRows[i].frame = NSRect(x: rightX, y: rowY, width: colW, height: 16)
             }
             y -= 19
