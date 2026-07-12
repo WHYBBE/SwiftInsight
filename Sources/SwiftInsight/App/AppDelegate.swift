@@ -1,6 +1,6 @@
 import AppKit
 
-/// 仅负责激活策略；采样与菜单栏由 SwiftUI @StateObject 持有（数据路径已验证）
+/// 仅负责激活策略与主窗口生命周期；采样与菜单栏由 SwiftUI @StateObject 持有
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -11,10 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         DispatchQueue.main.async {
-            if let window = NSApp.windows.first {
+            if let window = NSApp.windows.first(where: {
+                $0.styleMask.contains(.titled) && !($0 is NSPanel)
+            }) {
+                MainWindowCoordinator.attachMainWindow(window)
                 window.makeKeyAndOrderFront(nil)
             }
             NSApp.activate(ignoringOtherApps: true)
+            MainWindowCoordinator.updateDockVisibility()
         }
     }
 
@@ -23,10 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            NSApp.windows.first?.makeKeyAndOrderFront(nil)
-        }
-        NSApp.activate(ignoringOtherApps: true)
+        MainWindowCoordinator.showMainWindow()
         return true
     }
 }

@@ -10,27 +10,30 @@ struct SwiftInsightApp: App {
     @StateObject private var prefs = AppPreferences.shared
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environmentObject(monitor)
                 .environmentObject(menuBar)
                 .environmentObject(prefs)
                 .frame(minWidth: 1180, minHeight: 680)
                 .id(prefs.language)
+                .background(MainWindowAccessor())
+                .background(MainWindowOpenBridge())
                 .onAppear {
                     monitor.start()
                     controlKeyMonitor.start(processMonitor: monitor)
                     menuBar.onOpenMain = {
-                        NSApp.setActivationPolicy(.regular)
-                        NSApp.activate(ignoringOtherApps: true)
-                        NSApp.windows.first(where: { $0.styleMask.contains(.titled) })?
-                            .makeKeyAndOrderFront(nil)
+                        MainWindowCoordinator.showMainWindow()
                     }
                     DispatchQueue.main.async {
                         menuBar.install(monitor: monitor)
                         prefs.applyTheme()
+                        if let window = NSApp.windows.first(where: { MainWindowCoordinator.isMainWindow($0) }) {
+                            MainWindowCoordinator.attachMainWindow(window)
+                        }
                     }
-                    activateAsRegularApp()
+                    NSApp.setActivationPolicy(.regular)
+                    NSApp.activate(ignoringOtherApps: true)
                 }
                 .onChange(of: prefs.language) { _, _ in
                     menuBar.refreshLocalizedUI()
@@ -82,13 +85,12 @@ struct SwiftInsightApp: App {
                 .environmentObject(monitor)
                 .environmentObject(menuBar)
                 .environmentObject(prefs)
+                .onAppear {
+                    // 设置打开时显示 Dock
+                    NSApp.setActivationPolicy(.regular)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
         }
-    }
-
-    private func activateAsRegularApp() {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first?.makeKeyAndOrderFront(nil)
     }
 
     private func openAboutWindow() {
@@ -97,6 +99,7 @@ struct SwiftInsightApp: App {
 
         if let existing = NSApp.windows.first(where: { $0.identifier?.rawValue == "about-swiftinsight" }) {
             existing.makeKeyAndOrderFront(nil)
+            MainWindowCoordinator.updateDockVisibility()
             return
         }
 
@@ -113,5 +116,6 @@ struct SwiftInsightApp: App {
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
+        MainWindowCoordinator.updateDockVisibility()
     }
 }

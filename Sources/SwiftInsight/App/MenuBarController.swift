@@ -336,13 +336,12 @@ final class MenuBarController: NSObject, ObservableObject {
 
     func openMainWindow() {
         closePanel()
+        // 统一走主窗口协调器：恢复 Dock + 显示/重建主窗口
         if let onOpenMain {
             onOpenMain()
-            return
+        } else {
+            MainWindowCoordinator.showMainWindow()
         }
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first(where: { $0.styleMask.contains(.titled) })?.makeKeyAndOrderFront(nil)
     }
 
     func quit() {
