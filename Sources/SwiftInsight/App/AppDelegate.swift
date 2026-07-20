@@ -1,24 +1,19 @@
 import AppKit
 
-/// 仅负责激活策略与主窗口生命周期；采样与菜单栏由 SwiftUI @StateObject 持有
+/// 启动入口：不依赖 WindowGroup，避免「先显示再隐藏」闪屏
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        if MainWindowCoordinator.preferredMainWindowVisible {
+            NSApp.setActivationPolicy(.regular)
+        } else {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-
-        DispatchQueue.main.async {
-            if let window = NSApp.windows.first(where: {
-                $0.styleMask.contains(.titled) && !($0 is NSPanel)
-            }) {
-                MainWindowCoordinator.attachMainWindow(window)
-                window.makeKeyAndOrderFront(nil)
-            }
-            NSApp.activate(ignoringOtherApps: true)
-            MainWindowCoordinator.updateDockVisibility()
+        Task { @MainActor in
+            AppSession.shared.bootstrapIfNeeded()
+            MainWindowCoordinator.applyLaunchState()
         }
     }
 
@@ -29,5 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         MainWindowCoordinator.showMainWindow()
         return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        MainWindowCoordinator.persistLaunchStateBeforeTerminate()
     }
 }

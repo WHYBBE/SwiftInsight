@@ -4,50 +4,14 @@ import AppKit
 @main
 struct SwiftInsightApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var monitor = ProcessMonitor()
-    @StateObject private var controlKeyMonitor = ControlKeyMonitor()
-    @StateObject private var menuBar = MenuBarController()
-    @StateObject private var prefs = AppPreferences.shared
 
     var body: some Scene {
-        WindowGroup(id: "main") {
-            ContentView()
-                .environmentObject(monitor)
-                .environmentObject(menuBar)
-                .environmentObject(prefs)
-                .frame(minWidth: 1180, minHeight: 680)
-                .id(prefs.language)
-                .background(MainWindowAccessor())
-                .background(MainWindowOpenBridge())
-                .onAppear {
-                    MainWindowCoordinator.bindProcessMonitor(monitor)
-                    controlKeyMonitor.start(processMonitor: monitor)
-                    monitor.onMainWindowVisibilityChange = { visible in
-                        controlKeyMonitor.setEnabled(visible)
-                    }
-                    monitor.start()
-                    controlKeyMonitor.setEnabled(monitor.mainWindowVisible)
-                    menuBar.onOpenMain = {
-                        MainWindowCoordinator.showMainWindow()
-                    }
-                    DispatchQueue.main.async {
-                        menuBar.install(monitor: monitor)
-                        prefs.applyTheme()
-                        if let window = NSApp.windows.first(where: { MainWindowCoordinator.isMainWindow($0) }) {
-                            MainWindowCoordinator.attachMainWindow(window)
-                        }
-                        MainWindowCoordinator.updateDockVisibility()
-                    }
-                    NSApp.setActivationPolicy(.regular)
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-                .onChange(of: prefs.language) { _, _ in
-                    menuBar.refreshLocalizedUI()
-                }
+        // 无 WindowGroup：仅菜单栏启动时不创建主窗口，从根上消除闪屏
+        // 主窗口由 MainWindowCoordinator 按需以 AppKit 创建
+        // 注意：不要在属性初始化里碰 AppSession（NSApp 可能尚未就绪）
+        Settings {
+            SettingsRootView()
         }
-        .defaultSize(width: 1360, height: 860)
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button(L("cmd.about")) {
@@ -57,49 +21,45 @@ struct SwiftInsightApp: App {
             CommandGroup(replacing: .newItem) {}
             CommandMenu(L("cmd.process")) {
                 Button(L("cmd.refresh")) {
-                    monitor.refresh()
+                    AppSession.shared.monitor.refresh()
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
                 Divider()
 
                 Button(L("cmd.show_all")) {
-                    monitor.categoryFilter = nil
-                    monitor.showOnlyApps = false
+                    AppSession.shared.monitor.categoryFilter = nil
+                    AppSession.shared.monitor.showOnlyApps = false
                 }
                 Button(L("cmd.only_system")) {
-                    monitor.categoryFilter = .appleSystem
+                    AppSession.shared.monitor.categoryFilter = .appleSystem
                 }
                 Button(L("cmd.only_app")) {
-                    monitor.categoryFilter = .appleApp
+                    AppSession.shared.monitor.categoryFilter = .appleApp
                 }
                 Button(L("cmd.only_third")) {
-                    monitor.categoryFilter = .thirdParty
+                    AppSession.shared.monitor.categoryFilter = .thirdParty
                 }
             }
             CommandMenu(L("cmd.menubar")) {
                 ForEach(MenuBarIconMode.allCases) { mode in
                     Button(mode.displayName) {
-                        menuBar.iconMode = mode
+                        AppSession.shared.menuBar.iconMode = mode
                     }
                 }
             }
-        }
-
-        Settings {
-            SettingsView()
-                .environmentObject(monitor)
-                .environmentObject(menuBar)
-                .environmentObject(prefs)
-                .onAppear {
-                    // 设置打开时显示 Dock
-                    NSApp.setActivationPolicy(.regular)
-                    NSApp.activate(ignoringOtherApps: true)
+            CommandGroup(after: .windowList) {
+                Button(L("mb.open_main")) {
+                    MainWindowCoordinator.showMainWindow()
                 }
+                .keyboardShortcut("0", modifiers: .command)
+            }
         }
     }
 
     private func openAboutWindow() {
+        let session = AppSession.shared
+        session.bootstrapIfNeeded()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -110,8 +70,8 @@ struct SwiftInsightApp: App {
         }
 
         let view = AboutView()
-            .environmentObject(prefs)
-            .id(prefs.language)
+            .environmentObject(session.prefs)
+            .id(session.prefs.language)
         let hosting = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hosting)
         window.identifier = NSUserInterfaceItemIdentifier("about-swiftinsight")
@@ -123,5 +83,22 @@ struct SwiftInsightApp: App {
         window.center()
         window.makeKeyAndOrderFront(nil)
         MainWindowCoordinator.updateDockVisibility()
+    }
+}
+
+/// Settings 在真正打开时再取 session，避免启动期过早初始化
+private struct SettingsRootView: View {
+    var body: some View {
+        let session = AppSession.shared
+        SettingsView()
+            .environmentObject(session.monitor)
+            .environmentObject(session.menuBar)
+            .environmentObject(session.prefs)
+            .onAppear {
+                session.bootstrapIfNeeded()
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+                MainWindowCoordinator.updateDockVisibility()
+            }
     }
 }

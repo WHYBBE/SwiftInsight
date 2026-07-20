@@ -31,6 +31,7 @@
 		C4963F9689C39F50AF38FABE /* ProcessTreeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67FBBF03CF060A1386E3D38A /* ProcessTreeModels.swift */; };
 		D611C27C7BD443DD2F5C6D67 /* HelperMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9E2E3F65B039CD24782C0A /* HelperMain.swift */; };
 		D79CE0EA7A86C7C446E3DA09 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC15AC7DAA9195BA6C32F75 /* AppDelegate.swift */; };
+		D7AA7925277573B4BD7EAC21 /* AppSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53837D20AE7C654685562867 /* AppSession.swift */; };
 		E0C382CD99392B9FA2BADE87 /* ProcessAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77BBA1CBF5D63BB4E04DC02B /* ProcessAggregator.swift */; };
 		E568A7D8A194388468793486 /* SystemOverviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF06292ECE6463D7C5ED65E2 /* SystemOverviewViews.swift */; };
 		EA56A137007E0FE848CD6726 /* ProcessModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5930E3065D3BE72D63FC1C49 /* ProcessModels.swift */; };
@@ -62,6 +63,7 @@
 		3E1B36FD7551E1B95FD8D86A /* MetricsHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsHistoryStore.swift; sourceTree = "<group>"; };
 		475E633294CA8C1F81C76198 /* MainWindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowCoordinator.swift; sourceTree = "<group>"; };
 		4F9E2E3F65B039CD24782C0A /* HelperMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperMain.swift; sourceTree = "<group>"; };
+		53837D20AE7C654685562867 /* AppSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSession.swift; sourceTree = "<group>"; };
 		56BA1B78D4F4F52583001E53 /* SystemMetricsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMetricsModels.swift; sourceTree = "<group>"; };
 		5930E3065D3BE72D63FC1C49 /* ProcessModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessModels.swift; sourceTree = "<group>"; };
 		5FC675DCC90766C420B74B18 /* ProcessInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessInspector.swift; sourceTree = "<group>"; };
@@ -104,6 +106,7 @@
 			isa = PBXGroup;
 			children = (
 				7EC15AC7DAA9195BA6C32F75 /* AppDelegate.swift */,
+				53837D20AE7C654685562867 /* AppSession.swift */,
 				F33F4B0453373F59E272181C /* MainWindowAccessor.swift */,
 				475E633294CA8C1F81C76198 /* MainWindowCoordinator.swift */,
 				97E714F685181505DD145D8B /* MenuBarController.swift */,
@@ -349,6 +352,7 @@
 				C4366C19F7C97A379BDE9F4D /* AboutView.swift in Sources */,
 				D79CE0EA7A86C7C446E3DA09 /* AppDelegate.swift in Sources */,
 				A5857934D2B1A4D92856A001 /* AppPreferences.swift in Sources */,
+				D7AA7925277573B4BD7EAC21 /* AppSession.swift in Sources */,
 				3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */,
 				1DA6048D5C84ABB2033AE485 /* ControlKeyMonitor.swift in Sources */,
 				C22C049E564A21238F4A739D /* HelperInstaller.swift in Sources */,

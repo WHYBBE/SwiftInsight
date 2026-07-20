@@ -146,6 +146,8 @@ final class AppPreferences: ObservableObject {
     }
 
     func applyTheme() {
+        // 静态初始化过早时 NSApp 仍为 nil
+        guard NSApp != nil else { return }
         NSApp.appearance = theme.nsAppearance
     }
 }
