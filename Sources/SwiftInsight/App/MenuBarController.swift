@@ -433,13 +433,15 @@ final class MenuBarController: NSObject, ObservableObject {
 
         menu.addItem(.separator())
 
-        let version = NSMenuItem(
-            title: "\(L("settings.version")) \(AppInfo.version)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        version.isEnabled = false
-        menu.addItem(version)
+        if let ver = AppInfo.version {
+            let version = NSMenuItem(
+                title: "\(L("settings.version")) \(ver)",
+                action: nil,
+                keyEquivalent: ""
+            )
+            version.isEnabled = false
+            menu.addItem(version)
+        }
 
         let github = NSMenuItem(title: L("mb.github"), action: #selector(openGitHubFromMenu), keyEquivalent: "")
         github.target = self

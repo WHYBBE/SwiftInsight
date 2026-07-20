@@ -247,9 +247,11 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.trailing)
                 }
-                LabeledContent(L("settings.version")) {
-                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
-                        .foregroundStyle(.secondary)
+                if let version = AppInfo.version {
+                    LabeledContent(L("settings.version")) {
+                        Text(version)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 LabeledContent(L("settings.bundle_id")) {
                     Text(Bundle.main.bundleIdentifier ?? "me.whynbnb.SwiftInsight")

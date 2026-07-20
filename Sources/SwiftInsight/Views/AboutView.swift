@@ -36,14 +36,16 @@ struct AboutView: View {
             Divider()
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow {
-                    Text(L("settings.version"))
-                        .foregroundStyle(.secondary)
-                        .gridColumnAlignment(.trailing)
-                        .frame(width: labelWidth, alignment: .trailing)
-                    Text(AppInfo.version)
-                        .font(.body.monospacedDigit())
-                        .gridColumnAlignment(.leading)
+                if let version = AppInfo.version {
+                    GridRow {
+                        Text(L("settings.version"))
+                            .foregroundStyle(.secondary)
+                            .gridColumnAlignment(.trailing)
+                            .frame(width: labelWidth, alignment: .trailing)
+                        Text(version)
+                            .font(.body.monospacedDigit())
+                            .gridColumnAlignment(.leading)
+                    }
                 }
                 GridRow {
                     Text(L("settings.bundle_id"))
@@ -93,8 +95,10 @@ enum AppInfo {
             ?? "SwiftInsight"
     }
 
-    static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1"
+    static var version: String? {
+        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     static var bundleIdentifier: String {
