@@ -1075,14 +1075,36 @@ private enum MenuBarPalette {
 
 // MARK: - Section chrome
 
+/// 内存 / CPU 区块卡片：相对毛玻璃底提高填充与描边对比，明暗模式自适应
 private final class RoundedSectionView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = 12
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.05).cgColor
+        layer?.borderWidth = 1
+        refreshChrome()
     }
+
     required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshChrome()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        refreshChrome()
+    }
+
+    private func refreshChrome() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let dark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            // 浅色毛玻璃上 5% 几乎看不见；加深填充并加细边框
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(dark ? 0.12 : 0.075).cgColor
+            layer?.borderColor = NSColor.labelColor.withAlphaComponent(dark ? 0.18 : 0.12).cgColor
+        }
+    }
 }
 
 // MARK: - Single-color ring gauge
