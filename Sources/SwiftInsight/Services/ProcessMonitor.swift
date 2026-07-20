@@ -12,6 +12,9 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var summary = ResourceSummary()
     @Published private(set) var systemMetrics = SystemMetrics()
     @Published private(set) var rankings = CategoryRankings()
+    /// 菜单栏面板 Top（按独立 displayMode 构建，与主窗口 rankings 分离）
+    @Published private(set) var menuBarCPUTops: [ProcessRankingItem] = []
+    @Published private(set) var menuBarMemoryTops: [ProcessRankingItem] = []
     @Published private(set) var selectedDetail = ProcessDetailInfo()
     @Published private(set) var systemHistory: [SystemHistorySample] = []
     @Published private(set) var processHistory: [MetricSample] = []
@@ -98,6 +101,8 @@ final class ProcessMonitor: ObservableObject {
     private var lastDetailScanUptime: TimeInterval = 0
     private var lastIconCPUBucket = -1
     private var lastIconMemBucket = -1
+    /// 最近一次含进程的采样（面板 Top 重建用，不对外发布）
+    private var lastProcessSample: [MonitoredProcess] = []
     private let detailScanInterval: TimeInterval = 5.0
     private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .utility)
     private let historyStore = MetricsHistoryStore()
@@ -245,6 +250,9 @@ final class ProcessMonitor: ObservableObject {
             || !rankings.appleAppByCPU.isEmpty {
             rankings = CategoryRankings()
         }
+        if !menuBarCPUTops.isEmpty { menuBarCPUTops = [] }
+        if !menuBarMemoryTops.isEmpty { menuBarMemoryTops = [] }
+        lastProcessSample = []
         summary = ResourceSummary()
         previousCPU = [:]
         if !systemHistory.isEmpty { systemHistory = [] }
@@ -253,6 +261,18 @@ final class ProcessMonitor: ObservableObject {
             inspectedPID = nil
             selectedDetail = ProcessDetailInfo()
         }
+    }
+
+    /// 设置变更后重建菜单栏 Top（不重新采样）
+    func rebuildMenuBarTops() {
+        guard !lastProcessSample.isEmpty else { return }
+        let tops = Self.buildMenuBarTops(
+            from: lastProcessSample,
+            mode: AppPreferences.shared.menuBarDisplayMode,
+            limit: AppPreferences.shared.menuBarTopCount
+        )
+        menuBarCPUTops = tops.cpu
+        menuBarMemoryTops = tops.memory
     }
 
     private func restartTimers() {
@@ -572,7 +592,7 @@ final class ProcessMonitor: ObservableObject {
         finishSample()
     }
 
-    /// 面板轨：系统指标 + 排名（不写 processes，避免隐藏主窗口列表重绘）
+    /// 面板轨：系统指标 + 菜单栏 Top（不写 processes，避免隐藏主窗口列表重绘）
     private func applyPanelSnapshot(_ snapshot: ProcessSampler.Snapshot) {
         previousCPU = snapshot.previousCPU
         classificationCache = snapshot.classificationCache
@@ -581,8 +601,9 @@ final class ProcessMonitor: ObservableObject {
         lastUpdate = snapshot.timestamp
         summary = snapshot.summary
         systemMetrics = snapshot.systemMetrics
-        rankings = Self.buildRankings(from: snapshot.processes)
-        // 进程差分缓存留在 previousCPU；不发布完整 processes
+        lastProcessSample = snapshot.processes
+        publishMenuBarTops(from: snapshot.processes)
+        // 进程差分缓存留在 previousCPU；不发布完整 processes / 主窗口 rankings
         finishSample()
     }
 
@@ -597,6 +618,8 @@ final class ProcessMonitor: ObservableObject {
         processes = snapshot.processes
         systemMetrics = snapshot.systemMetrics
         rankings = Self.buildRankings(from: snapshot.processes)
+        lastProcessSample = snapshot.processes
+        publishMenuBarTops(from: snapshot.processes)
 
         historyStore.record(
             system: snapshot.systemMetrics,
@@ -609,6 +632,16 @@ final class ProcessMonitor: ObservableObject {
         recomputeDisplayed()
         refreshInspectedDetail(force: false)
         finishSample()
+    }
+
+    private func publishMenuBarTops(from processes: [MonitoredProcess]) {
+        let tops = Self.buildMenuBarTops(
+            from: processes,
+            mode: AppPreferences.shared.menuBarDisplayMode,
+            limit: AppPreferences.shared.menuBarTopCount
+        )
+        menuBarCPUTops = tops.cpu
+        menuBarMemoryTops = tops.memory
     }
 
     private func publishHistory() {
@@ -685,6 +718,50 @@ final class ProcessMonitor: ObservableObject {
             },
             appleAppByCPU: top(appleApp, by: { $0.cpuAvailable ? $0.cpuPercent : -1 }) {
                 $0.cpuAvailable ? String(format: "%.1f%%", $0.cpuPercent) : "N/A"
+            }
+        )
+    }
+
+    /// 菜单栏 Top：列表=单进程；聚合=应用组汇总；父子=PPID 根汇总
+    private static func buildMenuBarTops(
+        from processes: [MonitoredProcess],
+        mode: ListDisplayMode,
+        limit: Int
+    ) -> (cpu: [ProcessRankingItem], memory: [ProcessRankingItem]) {
+        let candidates: [MonitoredProcess]
+        switch mode {
+        case .flat:
+            candidates = processes
+        case .tree:
+            candidates = ProcessAggregator.buildForest(from: processes).map(\.aggregatedProcess)
+        case .parentTree:
+            candidates = ProcessParentTree.buildForest(from: processes).map { node in
+                var p = node.process
+                if node.memberCount > 1 {
+                    p.cpuPercent = node.totalCPU
+                    p.memoryBytes = node.totalMemory
+                    p.threadCount = node.totalThreads
+                    p.cpuAvailable = true
+                    p.memoryAvailable = true
+                }
+                return p
+            }
+        }
+
+        func top(by key: (MonitoredProcess) -> Double, label: (MonitoredProcess) -> String) -> [ProcessRankingItem] {
+            candidates
+                .sorted { key($0) > key($1) }
+                .prefix(limit)
+                .filter { key($0) > 0.01 || $0.memoryBytes > 1_048_576 }
+                .map { ProcessRankingItem(process: $0, metricLabel: label($0)) }
+        }
+
+        return (
+            cpu: top(by: { $0.cpuAvailable ? $0.cpuPercent : -1 }) {
+                $0.cpuAvailable ? String(format: "%.1f%%", $0.cpuPercent) : "N/A"
+            },
+            memory: top(by: { $0.memoryAvailable ? Double($0.memoryBytes) : -1 }) {
+                $0.memoryFormatted
             }
         )
     }

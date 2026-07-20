@@ -65,6 +65,7 @@ final class AppPreferences: ObservableObject {
     private static let languageKey = "appLanguage"
     private static let themeKey = "appTheme"
     private static let menuBarTopCountKey = "menuBarTopCount"
+    private static let menuBarDisplayModeKey = "menuBarDisplayMode"
     nonisolated static let menuBarTopCountRange = 3...15
     nonisolated static let menuBarTopCountDefault = 8
 
@@ -93,6 +94,13 @@ final class AppPreferences: ObservableObject {
                 return
             }
             UserDefaults.standard.set(menuBarTopCount, forKey: Self.menuBarTopCountKey)
+        }
+    }
+
+    /// 菜单栏 Top 列表模式（列表 / 聚合 / 父子），与主窗口 displayMode 独立
+    @Published var menuBarDisplayMode: ListDisplayMode {
+        didSet {
+            UserDefaults.standard.set(menuBarDisplayMode.rawValue, forKey: Self.menuBarDisplayModeKey)
         }
     }
 
@@ -125,6 +133,13 @@ final class AppPreferences: ObservableObject {
         let storedTop = UserDefaults.standard.object(forKey: Self.menuBarTopCountKey) as? Int
             ?? Self.menuBarTopCountDefault
         menuBarTopCount = Self.clampedTopCount(storedTop)
+
+        if let raw = UserDefaults.standard.string(forKey: Self.menuBarDisplayModeKey),
+           let mode = ListDisplayMode(rawValue: raw) {
+            menuBarDisplayMode = mode
+        } else {
+            menuBarDisplayMode = .flat
+        }
 
         L10nRuntime.language = lang.resolved
         applyTheme()
@@ -274,6 +289,8 @@ enum L10n {
         "settings.menubar.panel.caption": "点击图标弹出的面板：采进程排名与精简指标。仅面板打开时运行；关闭后立刻退回图标轨。",
         "settings.menubar.top_count": "高占用条数",
         "settings.menubar.top_count.caption": "菜单栏面板中 CPU / 内存高占用列表各显示的条数（3–15）。",
+        "settings.menubar.top_mode": "Top 展示方式",
+        "settings.menubar.top_mode.caption": "列表 / 聚合 / 父子，与主窗口视图模式一致，但单独配置、互不同步。",
         "settings.menubar.caption": "状态栏显示 CPU / 内存迷你条；点击弹出精简面板。关闭主窗口后仍保留菜单栏。",
         "settings.launch_at_login": "开机自启",
         "settings.launch_at_login.caption": "登录后自动启动（需使用 .app 运行；首次可能弹出系统授权）。",
@@ -506,6 +523,8 @@ enum L10n {
         "settings.menubar.panel.caption": "Click-to-open panel: process rankings and compact metrics. Runs only while the panel is open; closes back to the icon track.",
         "settings.menubar.top_count": "Top processes",
         "settings.menubar.top_count.caption": "How many CPU / memory top entries to show in the menu bar panel (3–15).",
+        "settings.menubar.top_mode": "Top list mode",
+        "settings.menubar.top_mode.caption": "List / Grouped / Parent — same options as the main window, stored separately.",
         "settings.menubar.caption": "Status item shows CPU/memory mini bars; click for a compact panel. Menu bar stays when the main window is closed.",
         "settings.launch_at_login": "Launch at Login",
         "settings.launch_at_login.caption": "Start automatically after login (requires a real .app; macOS may prompt for permission).",

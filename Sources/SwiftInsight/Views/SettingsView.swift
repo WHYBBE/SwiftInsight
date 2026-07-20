@@ -155,6 +155,15 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Picker(L("settings.menubar.top_mode"), selection: $prefs.menuBarDisplayMode) {
+                    ForEach(ListDisplayMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                Text(L("settings.menubar.top_mode.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Picker(L("settings.menubar.top_count"), selection: $prefs.menuBarTopCount) {
                     ForEach(Array(AppPreferences.menuBarTopCountRange), id: \.self) { n in
                         Text("\(n)").tag(n)

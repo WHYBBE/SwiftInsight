@@ -109,7 +109,19 @@ final class MenuBarController: NSObject, ObservableObject {
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] count in
+                self?.monitor?.rebuildMenuBarTops()
                 self?.applyTopCount(count, reload: true)
+            }
+            .store(in: &preferenceCancellables)
+        AppPreferences.shared.$menuBarDisplayMode
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, let monitor = self.monitor else { return }
+                monitor.rebuildMenuBarTops()
+                if self.isVisible {
+                    self.panelContent?.reload(from: monitor)
+                }
             }
             .store(in: &preferenceCancellables)
     }
@@ -192,13 +204,18 @@ final class MenuBarController: NSObject, ObservableObject {
 
     /// 面板打开时再订阅；关闭即取消
     private func bindPanelData(_ monitor: ProcessMonitor) {
-        Publishers.CombineLatest3(monitor.$systemMetrics, monitor.$summary, monitor.$rankings)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _, _ in
-                guard let self, self.isVisible, let monitor = self.monitor else { return }
-                self.panelContent?.reload(from: monitor)
-            }
-            .store(in: &dataCancellables)
+        Publishers.CombineLatest4(
+            monitor.$systemMetrics,
+            monitor.$summary,
+            monitor.$menuBarCPUTops,
+            monitor.$menuBarMemoryTops
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _, _, _, _ in
+            guard let self, self.isVisible, let monitor = self.monitor else { return }
+            self.panelContent?.reload(from: monitor)
+        }
+        .store(in: &dataCancellables)
     }
 
     private var isVisible: Bool { panel?.isVisible == true }
@@ -793,8 +810,10 @@ final class MenuBarPanelView: NSView {
         memAppLegend.attributedStringValue = legendBytes(L("cat.short.apple"), s.appleAppMemory, .systemTeal)
         memThirdLegend.attributedStringValue = legendBytes(L("cat.short.third"), s.thirdPartyMemory, .systemOrange)
 
-        fillTop(rows: cpuTopRows, items: Array(monitor.rankings.thirdPartyByCPU.prefix(topCount)))
-        fillTop(rows: memTopRows, items: Array(monitor.rankings.thirdPartyByMemory.prefix(topCount)))
+        fillTop(rows: cpuTopRows, items: Array(monitor.menuBarCPUTops.prefix(topCount)))
+        fillTop(rows: memTopRows, items: Array(monitor.menuBarMemoryTops.prefix(topCount)))
+        let modeName = AppPreferences.shared.menuBarDisplayMode.displayName
+        topsTitle.stringValue = "\(L("mb.tops")) · \(modeName)"
         needsLayout = true
     }
 
