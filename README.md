@@ -9,7 +9,7 @@
 > Built with Grok 4.5 / OpenCode vibe coding.
 
 A lightweight **Activity Monitor alternative** for macOS (Swift / SwiftUI).  
-Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**, and an optional **root Helper** for protected metrics.
+Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**, dual/triple refresh tracks for low overhead, and an optional **root Helper** for protected metrics.
 
 <p align="center">
   <img src="docs/preview-main-en.png" alt="SwiftInsight main window" width="900" />
@@ -30,8 +30,10 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 | **Views** | Flat list · app aggregation tree · parent/child tree |
 | **System strip** | CPU (cores, E/P), memory (app/wired/compressed), pressure, swap, net, disk, load |
 | **History** | CPU / memory / category CPU charts |
-| **Menu bar** | Mini icon + compact panel; reopen main window after close (Dock hides when window is closed) |
-| **Prefs** | Language, theme, refresh, launch at login, top-process count, Helper install |
+| **Menu bar** | Mini icon + frosted panel; independent top-list mode/count; resident without main window |
+| **Refresh** | Three tracks: **icon** / **panel** / **main** — separate intervals, lower idle cost |
+| **Launch** | Restores last main-window vs menu-bar-only state; no create-then-hide flash |
+| **Prefs** | Tabbed Settings: General · Refresh · Menu Bar · Helper · About |
 
 ---
 
@@ -39,7 +41,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 
 ### Process monitoring
 - Search, category filters, sort, quit / force quit, Reveal in Finder  
-- Hold **⌃ Control** to pause auto-refresh while inspecting  
+- Hold **⌃ Control** to pause **main-window** auto-refresh only (menu bar keeps sampling)  
 
 ### System overview
 - **CPU** — user/system, per-core rings (efficiency / performance colors), adaptive multi-row or bar layout for high core counts  
@@ -48,23 +50,42 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 - Swap, network throughput, page in/out, load average  
 - Optional **CPU frequency / temperature** when the privileged Helper is installed  
 
+### Three-track refresh (low overhead)
+| Track | Active when | Samples | Default | Options |
+|-------|-------------|---------|---------|---------|
+| **Icon** | Main closed **and** panel closed | System CPU + memory only (no process enum) | **3 s** | 2 / 3 / 5 / 10 s |
+| **Panel** | Panel open, main closed | Compact metrics + rankings (no root Helper pass) | **2 s** | 1 / 2 / 3 / 5 s |
+| **Main** | Main window open | Full list, charts, details; Helper fill when installed | **2 s** | 1 / 2 / 5 / 10 s |
+
+- With main open, the panel reuses full data (no extra panel timer)  
+- Closing main / panel drops heavy process data and falls back to the lighter track  
+- Long-session memory growth is reduced via autorelease pools, cache prune, lazy panel, and publish gating  
+
 ### Menu bar
-- Icon modes: **CPU only** (label + horizontal bar) · **MEM only** · **CPU + MEM** dual bars  
-- Panel: pressure + memory rings, core strip, category composition (vs 100% / physical RAM), configurable top processes (3–15, default 8)  
-- Footer: open main window, quit, shortcuts to **Activity Monitor** and **System Information** (real app icons)  
+- Icon modes: **CPU only** · **MEM only** · **CPU + MEM** dual bars (default: CPU + MEM)  
+- Panel: pressure + memory rings, E/P core strip, category composition, Top CPU / Top memory  
+- **Top list mode** independent of the main window: **List** · **Grouped** · **Parent** (default: List)  
+- **Top count**: 3–15 per column (default **8**)  
+- Section cards use higher-contrast fill + hairline border (light/dark adaptive on frosted material)  
+- Footer: open main window, quit, **Activity Monitor** / **System Information** (real app icons)  
 - Context menu: open main window, launch at login, version, GitHub, quit  
 - Positioning uses `NSPanel` — run a real **`.app`**, not raw `swift run`  
 
-### Window / Dock
-- Closing the main window **hides** it (app stays in the menu bar)  
-- Dock icon hides when no main/settings/about window is visible  
-- Reopen from menu bar (**Full Window** / **Open Main Window**) or Dock reopen  
+### Window / Dock / launch
+- Main window is created **on demand** (AppKit); no SwiftUI `WindowGroup` at launch → **no flash** when starting menu-bar-only  
+- Closing the main window **hides** it (app stays in the menu bar); does not quit  
+- Remembers whether the main window was visible last quit (`launchMainWindowVisible`); next launch restores that state  
+- Dock icon hides when no main / settings / about window is visible  
+- Reopen: menu bar **Full Window** / context menu / Dock click / **⌘0**  
 
-### Settings
-- Language: System / 中文 / English  
-- Theme: System / Light / Dark  
-- Refresh interval · menu bar icon mode · top-process count · **Launch at Login** (`SMAppService`)  
-- Privileged Helper: one-click install / uninstall (admin password; no source needed on the target Mac)  
+### Settings (tabbed)
+| Tab | Contents |
+|-----|----------|
+| **General** | Language (System / 中文 / English) · Theme · **Launch at Login** (`SMAppService`) |
+| **Refresh** | Main-window interval · notes for Control-pause |
+| **Menu Bar** | Icon mode · icon interval · panel interval · top-list mode · top count |
+| **Helper** | Status · install / uninstall (admin password) · recheck |
+| **About** | Category rules · purpose · version · bundle ID · MIT |
 
 ---
 
@@ -119,12 +140,13 @@ Also embeds `SwiftInsightHelper` (unsigned, not setuid).
 
 ## Privileged Helper (optional)
 
-Some system-protected processes show **N/A** for normal users. The Helper samples with elevated rights and can provide **frequency / temperature**.
+Some system-protected processes show **N/A** for normal users. The Helper samples with elevated rights and can provide **frequency / temperature**.  
+Full-track sampling uses the Helper when installed; the light icon track does not.
 
 ### From the app (preferred, no source on the target machine)
 
 1. Run a packaged **`.app`** (Xcode or `package-app.sh`) — Helper is **bundled** inside.  
-2. **Settings → Privileged sampling → Install Helper…**  
+2. **Settings → Helper → Install Helper…**  
 3. Enter the admin password.  
 
 Installs to:
@@ -156,7 +178,7 @@ sudo rm -f /usr/local/libexec/SwiftInsightHelper
 Package.swift                 # SwiftPM
 project.yml                   # XcodeGen → SwiftInsight.xcodeproj
 SwiftInsight.xcodeproj/       # Xcode project (shared sources)
-Sources/SwiftInsight/         # Main app (SwiftUI + AppKit menu bar)
+Sources/SwiftInsight/         # Main app (SwiftUI + AppKit menu bar / main window)
 Sources/SwiftInsightHelper/   # Privileged sampling helper
 Resources/Assets.xcassets/    # App icon
 scripts/                      # run / package / install helper
@@ -169,6 +191,12 @@ docs/                         # Screenshots & logo
 | Sources | `Sources/` | same |
 | Output | executable | `.app` (+ embedded Helper) |
 | Menu bar / login item | limited | **recommended** |
+
+### Architecture notes
+- **AppSession** — process-level monitor / menu bar / prefs bootstrap  
+- **MainWindowCoordinator** — on-demand `NSWindow`, launch preference, Dock policy  
+- **ProcessMonitor** — icon / panel / full sampling tracks  
+- Settings-only SwiftUI `Scene`; main UI hosted via AppKit when needed  
 
 ---
 
