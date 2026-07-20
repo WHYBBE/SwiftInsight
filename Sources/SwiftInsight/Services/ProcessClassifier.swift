@@ -844,18 +844,44 @@ enum ProcessClassifier {
         return .other
     }
 
-    /// 尝试读取 Bundle Identifier
+    // 按路径缓存 bid / 图标，避免反复 Bundle(url:) 与 NSWorkspace 全局缓存膨胀
+    private static let bidCacheLock = NSLock()
+    private static var bidCache: [String: String?] = [:]
+    private static let bidCacheLimit = 512
+    private static let iconCache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 256
+        c.totalCostLimit = 8 * 1024 * 1024
+        return c
+    }()
+
+    /// 尝试读取 Bundle Identifier（优先 Info.plist，避免 Bundle 全局缓存）
     static func bundleIdentifier(forPath path: String) -> String? {
         guard !path.isEmpty else { return nil }
 
-        // 从可执行文件路径回溯到 .app
+        bidCacheLock.lock()
+        if let cached = bidCache[path] {
+            bidCacheLock.unlock()
+            return cached
+        }
+        bidCacheLock.unlock()
+
+        let resolved = resolveBundleIdentifier(forPath: path)
+
+        bidCacheLock.lock()
+        if bidCache.count >= bidCacheLimit {
+            bidCache.removeAll(keepingCapacity: true)
+        }
+        bidCache[path] = resolved
+        bidCacheLock.unlock()
+        return resolved
+    }
+
+    private static func resolveBundleIdentifier(forPath path: String) -> String? {
+        // 从可执行文件路径回溯到 .app，只读 Info.plist（不走 Bundle(url:)）
         var url = URL(fileURLWithPath: path)
         while url.path != "/" {
             if url.pathExtension == "app" {
-                if let bid = Bundle(url: url)?.bundleIdentifier {
-                    return bid
-                }
-                // Info.plist 直接读
                 let infoPlist = url.appendingPathComponent("Contents/Info.plist")
                 if let dict = NSDictionary(contentsOf: infoPlist) as? [String: Any],
                    let bid = dict["CFBundleIdentifier"] as? String {
@@ -866,7 +892,6 @@ enum ProcessClassifier {
             url.deleteLastPathComponent()
         }
 
-        // 非 .app，尝试邻近 Info.plist
         let dir = URL(fileURLWithPath: path).deletingLastPathComponent()
         let infoPlist = dir.appendingPathComponent("Info.plist")
         if let dict = NSDictionary(contentsOf: infoPlist) as? [String: Any],
@@ -876,19 +901,31 @@ enum ProcessClassifier {
         return nil
     }
 
-    /// 获取应用图标
+    /// 获取应用图标（进程级 NSCache，限制数量与成本）
     static func icon(for path: String, name: String) -> NSImage {
+        let cacheKey = (path.isEmpty ? name : path) as NSString
+        if let cached = iconCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        let image: NSImage
         if !path.isEmpty {
             var url = URL(fileURLWithPath: path)
+            var found: NSImage?
             while url.path != "/" {
                 if url.pathExtension == "app" {
-                    return NSWorkspace.shared.icon(forFile: url.path)
+                    found = NSWorkspace.shared.icon(forFile: url.path)
+                    break
                 }
                 url.deleteLastPathComponent()
             }
-            return NSWorkspace.shared.icon(forFile: path)
+            image = found ?? NSWorkspace.shared.icon(forFile: path)
+        } else {
+            image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: name) ?? NSImage()
         }
-        return NSImage(systemSymbolName: "gearshape", accessibilityDescription: name)
-            ?? NSImage()
+        // 列表统一 16pt，降低位图成本
+        image.size = NSSize(width: 16, height: 16)
+        iconCache.setObject(image, forKey: cacheKey, cost: 16 * 16 * 4)
+        return image
     }
 }

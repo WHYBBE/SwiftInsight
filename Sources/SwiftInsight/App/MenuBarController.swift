@@ -19,13 +19,16 @@ final class MenuBarController: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     private var panelContent: MenuBarPanelView?
-    private var cancellables = Set<AnyCancellable>()
+    private var dataCancellables = Set<AnyCancellable>()
+    private var preferenceCancellables = Set<AnyCancellable>()
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var keyEventMonitor: Any?
     private var resignObserver: NSObjectProtocol?
     private var spaceObserver: NSObjectProtocol?
     private var otherAppObserver: NSObjectProtocol?
+    /// 图标按整数百分比分桶，避免每 tick 重建 NSImage
+    private var lastIconKey: String = ""
 
     private static let modeKey = "menuBarIconMode"
     private let panelWidth: CGFloat = 360
@@ -98,13 +101,14 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     private func bindPreferences() {
+        preferenceCancellables.removeAll()
         AppPreferences.shared.$menuBarTopCount
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] count in
                 self?.applyTopCount(count, reload: true)
             }
-            .store(in: &cancellables)
+            .store(in: &preferenceCancellables)
     }
 
     private func applyTopCount(_ count: Int, reload: Bool) {
@@ -157,17 +161,26 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     private func bindData(_ monitor: ProcessMonitor) {
-        cancellables.removeAll()
+        dataCancellables.removeAll()
+        // 仅系统指标驱动图标；面板打开时才重载内容，避免后台每 2s 全量重建
+        monitor.$systemMetrics
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.refreshIcon()
+            }
+            .store(in: &dataCancellables)
         Publishers.CombineLatest3(monitor.$systemMetrics, monitor.$summary, monitor.$rankings)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _, _ in
-                guard let self, let monitor = self.monitor else { return }
-                self.refreshIcon()
+                guard let self, self.isVisible, let monitor = self.monitor else { return }
                 self.panelContent?.reload(from: monitor)
             }
-            .store(in: &cancellables)
+            .store(in: &dataCancellables)
         refreshIcon()
-        panelContent?.reload(from: monitor)
+        if isVisible {
+            panelContent?.reload(from: monitor)
+        }
     }
 
     private var isVisible: Bool { panel?.isVisible == true }
@@ -400,8 +413,12 @@ final class MenuBarController: NSObject, ObservableObject {
         guard let monitor, let button = statusItem?.button else { return }
         let cpu = monitor.systemMetrics.cpuUsed
         let mem = monitor.systemMetrics.memoryUsedPercent
-        let image = MenuBarIconRenderer.image(mode: iconMode, cpu: cpu, memory: mem)
-        button.image = image
+        // 1% 分桶 + 模式；数值未变则跳过 NSImage 分配
+        let key = "\(iconMode.rawValue)|\(Int(cpu.rounded()))|\(Int(mem.rounded()))"
+        if key != lastIconKey {
+            lastIconKey = key
+            button.image = MenuBarIconRenderer.image(mode: iconMode, cpu: cpu, memory: mem)
+        }
         button.imagePosition = .imageOnly
         button.toolTip = String(format: L("status.cpu_mem"), cpu, mem)
         // 单指标图标更宽，双条保持紧凑

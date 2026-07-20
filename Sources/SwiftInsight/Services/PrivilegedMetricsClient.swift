@@ -53,37 +53,41 @@ enum PrivilegedMetricsClient {
     }
 
     static func helperStatus() -> (installed: Bool, root: Bool) {
-        guard let url = helperURL else { return (false, false) }
-        guard let data = run(url, arguments: ["status"]) else { return (true, false) }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return (true, false)
+        autoreleasepool {
+            guard let url = helperURL else { return (false, false) }
+            guard let data = run(url, arguments: ["status"]) else { return (true, false) }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return (true, false)
+            }
+            return (true, (obj["root"] as? Bool) ?? false)
         }
-        return (true, (obj["root"] as? Bool) ?? false)
     }
 
     static func sampleAll() -> Snapshot? {
-        guard let url = helperURL else { return nil }
-        guard let data = run(url, arguments: ["sample"]) else { return nil }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let list = obj["processes"] as? [[String: Any]] else {
-            return nil
-        }
+        autoreleasepool {
+            guard let url = helperURL else { return nil }
+            guard let data = run(url, arguments: ["sample"]) else { return nil }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let list = obj["processes"] as? [[String: Any]] else {
+                return nil
+            }
 
-        var map: [Int32: Sample] = [:]
-        map.reserveCapacity(list.count)
-        for item in list {
-            guard let pid = int32(item["pid"]) else { continue }
-            let userNs = u64(item["user_ns"])
-            let sysNs = u64(item["system_ns"])
-            map[pid] = Sample(
-                resident: u64(item["resident"]),
-                virtual: u64(item["virtual"]),
-                threads: Int(int32(item["threads"]) ?? 0),
-                userTime: Double(userNs) / 1_000_000_000.0,
-                systemTime: Double(sysNs) / 1_000_000_000.0
-            )
+            var map: [Int32: Sample] = [:]
+            map.reserveCapacity(list.count)
+            for item in list {
+                guard let pid = int32(item["pid"]) else { continue }
+                let userNs = u64(item["user_ns"])
+                let sysNs = u64(item["system_ns"])
+                map[pid] = Sample(
+                    resident: u64(item["resident"]),
+                    virtual: u64(item["virtual"]),
+                    threads: Int(int32(item["threads"]) ?? 0),
+                    userTime: Double(userNs) / 1_000_000_000.0,
+                    systemTime: Double(sysNs) / 1_000_000_000.0
+                )
+            }
+            return Snapshot(isRoot: (obj["root"] as? Bool) ?? false, byPID: map)
         }
-        return Snapshot(isRoot: (obj["root"] as? Bool) ?? false, byPID: map)
     }
 
     /// 仅读缓存，不阻塞（供主采样路径）
@@ -105,7 +109,7 @@ enum PrivilegedMetricsClient {
         sensorLock.unlock()
 
         sensorQueue.async {
-            let result = sampleSensorsBlocking()
+            let result = autoreleasepool { sampleSensorsBlocking() }
             sensorLock.lock()
             if result.cpuFrequencyMHz > 0 || result.cpuTemperatureC > 0 || result.isRoot {
                 var merged = result
@@ -145,56 +149,58 @@ enum PrivilegedMetricsClient {
     }
 
     private static func run(_ url: URL, arguments: [String]) -> Data? {
-        let process = Process()
-        process.executableURL = url
-        process.arguments = arguments
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
+        autoreleasepool {
+            let process = Process()
+            process.executableURL = url
+            process.arguments = arguments
+            let out = Pipe()
+            let err = Pipe()
+            process.standardOutput = out
+            process.standardError = err
 
-        // 必须边跑边读：sample JSON ~60–100KB，超过管道缓冲会在 waitUntilExit 上死锁
-        let outHandle = out.fileHandleForReading
-        let errHandle = err.fileHandleForReading
-        let box = OutputBox()
+            // 必须边跑边读：sample JSON ~60–100KB，超过管道缓冲会在 waitUntilExit 上死锁
+            let outHandle = out.fileHandleForReading
+            let errHandle = err.fileHandleForReading
+            let box = OutputBox()
 
-        outHandle.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                box.appendOut(chunk)
+            outHandle.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                } else {
+                    box.appendOut(chunk)
+                }
             }
-        }
-        errHandle.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                box.appendErr(chunk)
+            errHandle.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                } else {
+                    box.appendErr(chunk)
+                }
             }
-        }
 
-        do {
-            try process.run()
-        } catch {
+            do {
+                try process.run()
+            } catch {
+                outHandle.readabilityHandler = nil
+                errHandle.readabilityHandler = nil
+                return nil
+            }
+
+            process.waitUntilExit()
             outHandle.readabilityHandler = nil
             errHandle.readabilityHandler = nil
-            return nil
+
+            // 排空残余
+            let tailOut = outHandle.readDataToEndOfFile()
+            if !tailOut.isEmpty { box.appendOut(tailOut) }
+            _ = errHandle.readDataToEndOfFile()
+
+            guard process.terminationStatus == 0 else { return nil }
+            let data = box.outData
+            return data.isEmpty ? nil : data
         }
-
-        process.waitUntilExit()
-        outHandle.readabilityHandler = nil
-        errHandle.readabilityHandler = nil
-
-        // 排空残余
-        let tailOut = outHandle.readDataToEndOfFile()
-        if !tailOut.isEmpty { box.appendOut(tailOut) }
-        _ = errHandle.readDataToEndOfFile()
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = box.outData
-        return data.isEmpty ? nil : data
     }
 
     private final class OutputBox: @unchecked Sendable {

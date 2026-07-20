@@ -40,14 +40,31 @@ final class MetricsHistoryStore {
         processSamples = processSamples.filter { live.contains($0.key) || $0.key == watchedPID }
     }
 
+    /// 图表展示最多点数，降低 Charts 路径重建成本
+    private let displayMaxPoints = 90
+
     func systemHistory(window: HistoryWindow) -> [SystemHistorySample] {
         let cutoff = Date().addingTimeInterval(-window.rawValue)
-        return systemSamples.filter { $0.date >= cutoff }
+        let filtered = systemSamples.filter { $0.date >= cutoff }
+        return downsample(filtered, maxPoints: displayMaxPoints)
     }
 
     func processHistory(pid: Int32, window: HistoryWindow) -> [MetricSample] {
         let cutoff = Date().addingTimeInterval(-window.rawValue)
-        return (processSamples[pid] ?? []).filter { $0.date >= cutoff }
+        let filtered = (processSamples[pid] ?? []).filter { $0.date >= cutoff }
+        return downsample(filtered, maxPoints: displayMaxPoints)
+    }
+
+    private func downsample<T>(_ list: [T], maxPoints: Int) -> [T] {
+        guard list.count > maxPoints, maxPoints > 2 else { return list }
+        let last = list.count - 1
+        var result: [T] = []
+        result.reserveCapacity(maxPoints)
+        for i in 0..<maxPoints {
+            let idx = (i * last) / (maxPoints - 1)
+            result.append(list[idx])
+        }
+        return result
     }
 
     private func trimSystem(now: Date) {

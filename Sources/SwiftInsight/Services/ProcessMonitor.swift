@@ -7,8 +7,6 @@ import Combine
 final class ProcessMonitor: ObservableObject {
 
     @Published private(set) var processes: [MonitoredProcess] = []
-    /// 已过滤/排序的稳定快照，供列表直接使用
-    @Published private(set) var displayedProcesses: [MonitoredProcess] = []
     /// 树形/列表统一展示行
     @Published private(set) var displayRows: [ProcessDisplayRow] = []
     @Published private(set) var summary = ResourceSummary()
@@ -53,7 +51,8 @@ final class ProcessMonitor: ObservableObject {
     /// 当前选中 PID（用于详情增强与历史曲线）
     @Published var inspectedPID: Int32? = nil {
         didSet {
-            refreshInspectedDetail()
+            lastDetailScanUptime = 0
+            refreshInspectedDetail(force: true)
             publishHistory()
         }
     }
@@ -62,10 +61,13 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var privilegedHelperRoot = false
 
     private var timer: Timer?
+    private var sampleWatchdog: DispatchWorkItem?
     private var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
     private var classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)] = [:]
     private var usernameCache: [uid_t: String] = [:]
     private var isSampling = false
+    private var lastDetailScanUptime: TimeInterval = 0
+    private let detailScanInterval: TimeInterval = 5.0
     private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .userInitiated)
     private let historyStore = MetricsHistoryStore()
 
@@ -93,7 +95,9 @@ final class ProcessMonitor: ObservableObject {
         refreshHelperStatus()
         // 预热系统指标基线，避免首帧 CPU 无差分
         sampleQueue.async {
-            _ = SystemMetricsCollector.sample()
+            autoreleasepool {
+                _ = SystemMetricsCollector.sample()
+            }
         }
         refresh()
         restartTimer()
@@ -109,6 +113,9 @@ final class ProcessMonitor: ObservableObject {
         isRunning = false
         timer?.invalidate()
         timer = nil
+        sampleWatchdog?.cancel()
+        sampleWatchdog = nil
+        isSampling = false
     }
 
     func setRefreshPaused(_ paused: Bool) {
@@ -170,11 +177,11 @@ final class ProcessMonitor: ObservableObject {
             filterText: filterText
         )
 
+        let rows: [ProcessDisplayRow]
         switch displayMode {
         case .flat:
             let sorted = Self.sortProcesses(filtered, column: sortColumn, ascending: sortAscending)
-            displayedProcesses = sorted
-            displayRows = sorted.map { p in
+            rows = sorted.map { p in
                 ProcessDisplayRow(
                     id: "pid:\(p.pid)",
                     process: p,
@@ -188,26 +195,46 @@ final class ProcessMonitor: ObservableObject {
             }
         case .tree:
             let forest = ProcessAggregator.buildForest(from: filtered)
-            let rows = ProcessAggregator.flatten(
+            rows = ProcessAggregator.flatten(
                 forest,
                 expanded: expandedGroups,
                 sortColumn: sortColumn,
                 sortAscending: sortAscending
             )
-            displayRows = rows
-            displayedProcesses = rows.map(\.process)
         case .parentTree:
             let forest = ProcessParentTree.buildForest(from: filtered)
-            let rows = ProcessParentTree.flatten(
+            rows = ProcessParentTree.flatten(
                 forest,
                 expanded: expandedGroups,
                 sortColumn: sortColumn,
                 sortAscending: sortAscending,
                 rollupWhenCollapsed: false
             )
-            displayRows = rows
-            displayedProcesses = rows.map(\.process)
         }
+        displayRows = rows
+        pruneExpandedGroups(livePIDs: Set(processes.map(\.pid)))
+    }
+
+    /// 展开键含 PID；进程退出后剔除，防止 Set 无限增长
+    private func pruneExpandedGroups(livePIDs: Set<Int32>) {
+        guard !expandedGroups.isEmpty else { return }
+        let pruned = expandedGroups.filter { key in
+            guard let pid = Self.pidFromExpandKey(key) else { return false }
+            return livePIDs.contains(pid)
+        }
+        if pruned.count != expandedGroups.count {
+            expandedGroups = pruned
+        }
+    }
+
+    private static func pidFromExpandKey(_ key: String) -> Int32? {
+        if let hash = key.lastIndex(of: "#") {
+            return Int32(key[key.index(after: hash)...])
+        }
+        if let colon = key.lastIndex(of: ":") {
+            return Int32(key[key.index(after: colon)...])
+        }
+        return nil
     }
 
     private static func filterProcesses(
@@ -282,36 +309,43 @@ final class ProcessMonitor: ObservableObject {
         let usernameCache = self.usernameCache
 
         sampleQueue.async { [weak self] in
-            // 进程采样与 sensors 解耦：sensors 走独立队列，避免 powermetrics 卡住刷新
-            let privileged = PrivilegedMetricsClient.sampleAll()
-            let sensors = PrivilegedMetricsClient.currentSensors()
-            PrivilegedMetricsClient.refreshSensorsAsync()
-            let snapshot = ProcessSampler.collect(
-                previousCPU: previousCPU,
-                classificationCache: classificationCache,
-                usernameCache: usernameCache,
-                privileged: privileged,
-                sensors: sensors
-            )
+            // GCD 队列无 runloop autorelease pool；包一层避免 ObjC 临时对象堆积
+            let snapshot: ProcessSampler.Snapshot = autoreleasepool {
+                let privileged = PrivilegedMetricsClient.sampleAll()
+                let sensors = PrivilegedMetricsClient.currentSensors()
+                PrivilegedMetricsClient.refreshSensorsAsync()
+                return ProcessSampler.collect(
+                    previousCPU: previousCPU,
+                    classificationCache: classificationCache,
+                    usernameCache: usernameCache,
+                    privileged: privileged,
+                    sensors: sensors
+                )
+            }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.applySnapshot(snapshot)
             }
         }
 
-        // 兜底：采样卡死（如 helper 管道死锁）时强制解锁
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+        // 兜底：采样卡死时强制解锁（可取消，避免每 tick 堆积 work item）
+        sampleWatchdog?.cancel()
+        let watchdog = DispatchWorkItem { [weak self] in
             guard let self else { return }
             if self.isSampling {
                 self.isSampling = false
             }
         }
+        sampleWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: watchdog)
     }
 
     private func applySnapshot(_ snapshot: ProcessSampler.Snapshot) {
         previousCPU = snapshot.previousCPU
         classificationCache = snapshot.classificationCache
-        usernameCache = snapshot.usernameCache
+        // 用户名缓存按活跃 UID 裁剪，防止长期多用户场景膨胀
+        let liveUIDs = Set(snapshot.processes.map(\.uid))
+        usernameCache = snapshot.usernameCache.filter { liveUIDs.contains($0.key) }
         lastUpdate = snapshot.timestamp
         summary = snapshot.summary
         processes = snapshot.processes
@@ -327,9 +361,10 @@ final class ProcessMonitor: ObservableObject {
         publishHistory()
 
         recomputeDisplayed()
-        refreshInspectedDetail()
+        refreshInspectedDetail(force: false)
         isSampling = false
-        objectWillChange.send()
+        sampleWatchdog?.cancel()
+        sampleWatchdog = nil
     }
 
     private func publishHistory() {
@@ -341,15 +376,23 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
-    private func refreshInspectedDetail() {
+    private func refreshInspectedDetail(force: Bool) {
         guard let pid = inspectedPID else {
             selectedDetail = ProcessDetailInfo()
+            lastDetailScanUptime = 0
             return
         }
+        let now = ProcessInfo.processInfo.systemUptime
+        if !force, lastDetailScanUptime > 0, now - lastDetailScanUptime < detailScanInterval {
+            return
+        }
+        lastDetailScanUptime = now
         // 打开文件扫描较重；用独立队列，避免堵住进程采样
         let all = processes
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let detail = ProcessInspector.inspect(pid: pid, processes: all)
+            let detail = autoreleasepool {
+                ProcessInspector.inspect(pid: pid, processes: all)
+            }
             DispatchQueue.main.async {
                 guard let self, self.inspectedPID == pid else { return }
                 self.selectedDetail = detail
