@@ -13,6 +13,43 @@ struct SettingsView: View {
     @State private var launchAtLoginMessageIsError = false
 
     var body: some View {
+        TabView {
+            generalTab
+                .tabItem {
+                    Label(L("settings.tab.general"), systemImage: "gearshape")
+                }
+
+            refreshTab
+                .tabItem {
+                    Label(L("settings.tab.refresh"), systemImage: "arrow.clockwise")
+                }
+
+            menuBarTab
+                .tabItem {
+                    Label(L("settings.tab.menubar"), systemImage: "menubar.rectangle")
+                }
+
+            helperTab
+                .tabItem {
+                    Label(L("settings.tab.helper"), systemImage: "lock.shield")
+                }
+
+            aboutTab
+                .tabItem {
+                    Label(L("settings.tab.about"), systemImage: "info.circle")
+                }
+        }
+        .frame(width: 520, height: 420)
+        .id(prefs.language)
+        .onAppear {
+            monitor.refreshHelperStatus()
+            launchAtLoginEnabled = LaunchAtLogin.isEnabled
+        }
+    }
+
+    // MARK: - Tabs
+
+    private var generalTab: some View {
         Form {
             Section(L("settings.appearance")) {
                 Picker(L("settings.language"), selection: $prefs.language) {
@@ -34,58 +71,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section(L("settings.refresh")) {
-                Picker(L("settings.refresh_interval"), selection: $monitor.refreshInterval) {
-                    Text(L("settings.1s")).tag(1.0)
-                    Text(L("settings.2s")).tag(2.0)
-                    Text(L("settings.5s")).tag(5.0)
-                    Text(L("settings.10s")).tag(10.0)
-                }
-                Text(L("settings.refresh.main.caption"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                LabeledContent(L("settings.pause_refresh")) {
-                    Text(L("settings.hold_control"))
-                        .foregroundStyle(.secondary)
-                }
-                Text(L("settings.pause.caption"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section(L("settings.menubar")) {
-                Picker(L("settings.icon_mode"), selection: $menuBar.iconMode) {
-                    ForEach(MenuBarIconMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                Picker(L("settings.menubar.icon_interval"), selection: $monitor.menuBarIconInterval) {
-                    Text(L("settings.2s")).tag(2.0)
-                    Text(L("settings.3s")).tag(3.0)
-                    Text(L("settings.5s")).tag(5.0)
-                    Text(L("settings.10s")).tag(10.0)
-                }
-                Text(L("settings.menubar.icon.caption"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker(L("settings.menubar.panel_interval"), selection: $monitor.menuBarPanelInterval) {
-                    Text(L("settings.1s")).tag(1.0)
-                    Text(L("settings.2s")).tag(2.0)
-                    Text(L("settings.3s")).tag(3.0)
-                    Text(L("settings.5s")).tag(5.0)
-                }
-                Text(L("settings.menubar.panel.caption"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker(L("settings.menubar.top_count"), selection: $prefs.menuBarTopCount) {
-                    ForEach(Array(AppPreferences.menuBarTopCountRange), id: \.self) { n in
-                        Text("\(n)").tag(n)
-                    }
-                }
-                Text(L("settings.menubar.top_count.caption"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
+            Section(L("settings.launch_at_login")) {
                 Toggle(L("settings.launch_at_login"), isOn: launchAtLoginBinding)
                     .disabled(!LaunchAtLogin.isAvailable)
                 Text(L("settings.launch_at_login.caption"))
@@ -101,11 +87,89 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(launchAtLoginMessageIsError ? Color.red : Color.secondary)
                 }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var refreshTab: some View {
+        Form {
+            Section(L("settings.refresh")) {
+                Picker(L("settings.refresh_interval"), selection: $monitor.refreshInterval) {
+                    Text(L("settings.1s")).tag(1.0)
+                    Text(L("settings.2s")).tag(2.0)
+                    Text(L("settings.5s")).tag(5.0)
+                    Text(L("settings.10s")).tag(10.0)
+                }
+                Text(L("settings.refresh.main.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(L("settings.pause_refresh")) {
+                LabeledContent(L("settings.pause_refresh")) {
+                    Text(L("settings.hold_control"))
+                        .foregroundStyle(.secondary)
+                }
+                Text(L("settings.pause.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var menuBarTab: some View {
+        Form {
+            Section(L("settings.icon_mode")) {
+                Picker(L("settings.icon_mode"), selection: $menuBar.iconMode) {
+                    ForEach(MenuBarIconMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
                 Text(L("settings.menubar.caption"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
+            Section(L("settings.menubar.icon_interval")) {
+                Picker(L("settings.menubar.icon_interval"), selection: $monitor.menuBarIconInterval) {
+                    Text(L("settings.2s")).tag(2.0)
+                    Text(L("settings.3s")).tag(3.0)
+                    Text(L("settings.5s")).tag(5.0)
+                    Text(L("settings.10s")).tag(10.0)
+                }
+                Text(L("settings.menubar.icon.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(L("settings.menubar.panel_interval")) {
+                Picker(L("settings.menubar.panel_interval"), selection: $monitor.menuBarPanelInterval) {
+                    Text(L("settings.1s")).tag(1.0)
+                    Text(L("settings.2s")).tag(2.0)
+                    Text(L("settings.3s")).tag(3.0)
+                    Text(L("settings.5s")).tag(5.0)
+                }
+                Text(L("settings.menubar.panel.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(L("settings.menubar.top_count"), selection: $prefs.menuBarTopCount) {
+                    ForEach(Array(AppPreferences.menuBarTopCountRange), id: \.self) { n in
+                        Text("\(n)").tag(n)
+                    }
+                }
+                Text(L("settings.menubar.top_count.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var helperTab: some View {
+        Form {
             Section(L("settings.helper")) {
                 LabeledContent("Helper") {
                     Text(helperStatusText)
@@ -150,7 +214,12 @@ struct SettingsView: View {
                     .foregroundStyle(.tertiary)
                     .textSelection(.enabled)
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var aboutTab: some View {
+        Form {
             Section(L("settings.classification")) {
                 Text(L("settings.classification.intro"))
                     .font(.callout)
@@ -162,15 +231,32 @@ struct SettingsView: View {
                 Label(L("settings.classification.third"), systemImage: "app.badge")
                     .font(.callout)
             }
+
+            Section(L("settings.app")) {
+                LabeledContent(L("settings.purpose")) {
+                    Text(L("settings.purpose.value"))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+                LabeledContent(L("settings.version")) {
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent(L("settings.bundle_id")) {
+                    Text(Bundle.main.bundleIdentifier ?? "me.whynbnb.SwiftInsight")
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                LabeledContent(L("settings.license")) {
+                    Text("MIT")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 620)
-        .id(prefs.language)
-        .onAppear {
-            monitor.refreshHelperStatus()
-            launchAtLoginEnabled = LaunchAtLogin.isEnabled
-        }
     }
+
+    // MARK: - Bindings / Helper
 
     private var launchAtLoginBinding: Binding<Bool> {
         Binding(

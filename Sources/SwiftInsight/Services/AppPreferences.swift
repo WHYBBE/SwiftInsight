@@ -250,6 +250,11 @@ enum L10n {
         "thermal.critical": "热·危",
 
         // Settings
+        "settings.tab.general": "通用",
+        "settings.tab.refresh": "刷新",
+        "settings.tab.menubar": "菜单栏",
+        "settings.tab.helper": "特权",
+        "settings.tab.about": "关于",
         "settings.refresh": "刷新",
         "settings.refresh_interval": "主窗口间隔",
         "settings.refresh.main.caption": "仅主窗口打开时生效：完整进程列表、图表与详情。关闭主窗口后自动停用。",
@@ -477,6 +482,11 @@ enum L10n {
         "thermal.serious": "Hot",
         "thermal.critical": "Critical",
 
+        "settings.tab.general": "General",
+        "settings.tab.refresh": "Refresh",
+        "settings.tab.menubar": "Menu Bar",
+        "settings.tab.helper": "Helper",
+        "settings.tab.about": "About",
         "settings.refresh": "Refresh",
         "settings.refresh_interval": "Main window interval",
         "settings.refresh.main.caption": "Applies only while the main window is open: full process list, charts, and details. Stops when the window is closed.",
