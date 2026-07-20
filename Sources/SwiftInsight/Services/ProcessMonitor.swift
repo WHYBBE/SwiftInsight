@@ -96,8 +96,10 @@ final class ProcessMonitor: ObservableObject {
     private var usernameCache: [uid_t: String] = [:]
     private var isSampling = false
     private var lastDetailScanUptime: TimeInterval = 0
+    private var lastIconCPUBucket = -1
+    private var lastIconMemBucket = -1
     private let detailScanInterval: TimeInterval = 5.0
-    private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .userInitiated)
+    private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .utility)
     private let historyStore = MetricsHistoryStore()
 
     private static let mainIntervalKey = "mainRefreshInterval"
@@ -193,10 +195,14 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
+    /// 主窗口显示时挂载 Control 暂停监听（由 App 注入）
+    var onMainWindowVisibilityChange: ((Bool) -> Void)?
+
     /// 主窗口显示/隐藏时由协调器调用
     func setMainWindowVisible(_ visible: Bool) {
         guard mainWindowVisible != visible else { return }
         mainWindowVisible = visible
+        onMainWindowVisibilityChange?(visible)
         restartTimers()
         guard isRunning else { return }
         if visible {
@@ -206,6 +212,7 @@ final class ProcessMonitor: ObservableObject {
         } else if menuBarPanelVisible {
             refreshPanel()
         } else {
+            releaseHeavySampleData()
             refreshIconMetrics()
         }
     }
@@ -222,6 +229,29 @@ final class ProcessMonitor: ObservableObject {
             if !mainWindowVisible {
                 refreshPanel()
             }
+        } else if !mainWindowVisible {
+            // 退回图标轨：丢掉进程快照，降低常驻内存
+            releaseHeavySampleData()
+        }
+    }
+
+    /// 仅图标常驻时释放进程级数据
+    private func releaseHeavySampleData() {
+        if !processes.isEmpty { processes = [] }
+        if !displayRows.isEmpty { displayRows = [] }
+        if !rankings.thirdPartyByCPU.isEmpty
+            || !rankings.thirdPartyByMemory.isEmpty
+            || !rankings.appleSystemByCPU.isEmpty
+            || !rankings.appleAppByCPU.isEmpty {
+            rankings = CategoryRankings()
+        }
+        summary = ResourceSummary()
+        previousCPU = [:]
+        if !systemHistory.isEmpty { systemHistory = [] }
+        if !processHistory.isEmpty { processHistory = [] }
+        if inspectedPID != nil {
+            inspectedPID = nil
+            selectedDetail = ProcessDetailInfo()
         }
     }
 
@@ -236,7 +266,7 @@ final class ProcessMonitor: ObservableObject {
         mainTimer = nil
         guard isRunning, mainWindowVisible else { return }
         mainTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 guard let self, self.isRunning, self.mainWindowVisible, !self.isRefreshPaused else { return }
                 self.refreshFull()
             }
@@ -252,7 +282,7 @@ final class ProcessMonitor: ObservableObject {
         iconTimer = nil
         guard isRunning, !mainWindowVisible, !menuBarPanelVisible else { return }
         iconTimer = Timer.scheduledTimer(withTimeInterval: menuBarIconInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 guard let self, self.isRunning, !self.mainWindowVisible, !self.menuBarPanelVisible else { return }
                 self.refreshIconMetrics()
             }
@@ -268,7 +298,7 @@ final class ProcessMonitor: ObservableObject {
         panelTimer = nil
         guard isRunning, menuBarPanelVisible, !mainWindowVisible else { return }
         panelTimer = Timer.scheduledTimer(withTimeInterval: menuBarPanelInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 guard let self, self.isRunning, self.menuBarPanelVisible, !self.mainWindowVisible else { return }
                 self.refreshPanel()
             }
@@ -475,16 +505,18 @@ final class ProcessMonitor: ObservableObject {
         let classificationCache = self.classificationCache
         let usernameCache = self.usernameCache
         let needProcesses = (kind != .icon)
+        // 面板轨：不调 helper sample（spawn+JSON 贵）；仅主窗口用特权补全
+        let useHelper = (kind == .full)
 
         sampleQueue.async { [weak self] in
             let snapshot: ProcessSampler.Snapshot = autoreleasepool {
-                let sensors = PrivilegedMetricsClient.currentSensors()
-                // sensors 较慢：图标轨不刷；面板/主窗口才后台刷新
-                if kind != .icon {
-                    PrivilegedMetricsClient.refreshSensorsAsync()
+                if kind == .icon {
+                    return ProcessSampler.collectMetricsOnly()
                 }
+                let sensors = PrivilegedMetricsClient.currentSensors()
+                PrivilegedMetricsClient.refreshSensorsAsync()
                 if needProcesses {
-                    let privileged = PrivilegedMetricsClient.sampleAll()
+                    let privileged = useHelper ? PrivilegedMetricsClient.sampleAll() : nil
                     return ProcessSampler.collect(
                         previousCPU: previousCPU,
                         classificationCache: classificationCache,
@@ -493,7 +525,7 @@ final class ProcessMonitor: ObservableObject {
                         sensors: sensors
                     )
                 }
-                return ProcessSampler.collectMetricsOnly(sensors: sensors)
+                return ProcessSampler.collectMetricsOnly()
             }
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -525,14 +557,22 @@ final class ProcessMonitor: ObservableObject {
         sampleWatchdog = nil
     }
 
-    /// 图标轨：只更新系统指标（驱动状态栏条）
+    /// 图标轨：只在 1% 分桶变化时发布，避免隐藏主窗口 SwiftUI 空转
     private func applyIconSnapshot(_ snapshot: ProcessSampler.Snapshot) {
-        lastUpdate = snapshot.timestamp
+        let cpu = Int(snapshot.systemMetrics.cpuUsed.rounded())
+        let mem = Int(snapshot.systemMetrics.memoryUsedPercent.rounded())
+        if cpu == lastIconCPUBucket, mem == lastIconMemBucket {
+            finishSample()
+            return
+        }
+        lastIconCPUBucket = cpu
+        lastIconMemBucket = mem
+        // 不碰 lastUpdate，减少无关 @Published 广播
         systemMetrics = snapshot.systemMetrics
         finishSample()
     }
 
-    /// 面板轨：系统指标 + 排名（不刷主窗口列表/历史/详情）
+    /// 面板轨：系统指标 + 排名（不写 processes，避免隐藏主窗口列表重绘）
     private func applyPanelSnapshot(_ snapshot: ProcessSampler.Snapshot) {
         previousCPU = snapshot.previousCPU
         classificationCache = snapshot.classificationCache
@@ -540,10 +580,9 @@ final class ProcessMonitor: ObservableObject {
         usernameCache = snapshot.usernameCache.filter { liveUIDs.contains($0.key) }
         lastUpdate = snapshot.timestamp
         summary = snapshot.summary
-        // 保留进程数据供面板 Top 列表；不 recomputeDisplayed / history / detail
-        processes = snapshot.processes
         systemMetrics = snapshot.systemMetrics
         rankings = Self.buildRankings(from: snapshot.processes)
+        // 进程差分缓存留在 previousCPU；不发布完整 processes
         finishSample()
     }
 
@@ -606,16 +645,33 @@ final class ProcessMonitor: ObservableObject {
     }
 
     private static func buildRankings(from processes: [MonitoredProcess], limit: Int = 15) -> CategoryRankings {
-        func top(_ list: [MonitoredProcess], by key: (MonitoredProcess) -> Double, label: (MonitoredProcess) -> String) -> [ProcessRankingItem] {
-            list.sorted { key($0) > key($1) }
-                .prefix(limit)
-                .filter { key($0) > 0.01 || $0.memoryBytes > 1_048_576 }
-                .map { ProcessRankingItem(process: $0, metricLabel: label($0)) }
+        // 单次遍历分桶 + partial sort，避免 4 次全量 sort
+        var third: [MonitoredProcess] = []
+        var appleSys: [MonitoredProcess] = []
+        var appleApp: [MonitoredProcess] = []
+        third.reserveCapacity(processes.count / 2)
+        for p in processes {
+            switch p.category {
+            case .thirdParty: third.append(p)
+            case .appleSystem: appleSys.append(p)
+            case .appleApp: appleApp.append(p)
+            case .unknown: break
+            }
         }
 
-        let third = processes.filter { $0.category == .thirdParty }
-        let appleSys = processes.filter { $0.category == .appleSystem }
-        let appleApp = processes.filter { $0.category == .appleApp }
+        func top(_ list: [MonitoredProcess], by key: (MonitoredProcess) -> Double, label: (MonitoredProcess) -> String) -> [ProcessRankingItem] {
+            guard !list.isEmpty else { return [] }
+            let ranked = list.sorted { key($0) > key($1) }
+            var out: [ProcessRankingItem] = []
+            out.reserveCapacity(min(limit, ranked.count))
+            for p in ranked.prefix(limit) {
+                let k = key(p)
+                if k > 0.01 || p.memoryBytes > 1_048_576 {
+                    out.append(ProcessRankingItem(process: p, metricLabel: label(p)))
+                }
+            }
+            return out
+        }
 
         return CategoryRankings(
             thirdPartyByCPU: top(third, by: { $0.cpuAvailable ? $0.cpuPercent : -1 }) {
@@ -652,7 +708,8 @@ private enum ProcessSampler {
         sensors: PrivilegedMetricsClient.Sensors = .init()
     ) -> Snapshot {
         let now = Date()
-        var systemMetrics = SystemMetricsCollector.sample()
+        // 图标轨：极简 sample（无 per-core/net/disk）；sensors 一般为空
+        var systemMetrics = SystemMetricsCollector.sampleIcon()
         PrivilegedMetricsClient.applySensors(sensors, to: &systemMetrics)
         return Snapshot(
             processes: [],

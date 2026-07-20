@@ -21,8 +21,12 @@ struct SwiftInsightApp: App {
                 .background(MainWindowOpenBridge())
                 .onAppear {
                     MainWindowCoordinator.bindProcessMonitor(monitor)
-                    monitor.start()
                     controlKeyMonitor.start(processMonitor: monitor)
+                    monitor.onMainWindowVisibilityChange = { visible in
+                        controlKeyMonitor.setEnabled(visible)
+                    }
+                    monitor.start()
+                    controlKeyMonitor.setEnabled(monitor.mainWindowVisible)
                     menuBar.onOpenMain = {
                         MainWindowCoordinator.showMainWindow()
                     }

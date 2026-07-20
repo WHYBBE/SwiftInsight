@@ -9,6 +9,7 @@ final class MenuBarController: NSObject, ObservableObject {
     @Published var iconMode: MenuBarIconMode {
         didSet {
             UserDefaults.standard.set(iconMode.rawValue, forKey: Self.modeKey)
+            lastIconKey = ""
             refreshIcon()
         }
     }
@@ -53,11 +54,28 @@ final class MenuBarController: NSObject, ObservableObject {
         self.monitor = monitor
 
         if statusItem != nil {
-            bindData(monitor)
-            applyTopCount(AppPreferences.shared.menuBarTopCount, reload: true)
+            bindIconOnly(monitor)
             return
         }
 
+        // 常驻只挂状态项；面板首次点击再创建，降低基线内存
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = item.button {
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
+            button.toolTip = "SwiftInsight"
+            button.target = self
+            button.action = #selector(togglePanel(_:))
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        }
+        statusItem = item
+
+        bindIconOnly(monitor)
+        bindPreferences()
+    }
+
+    private func ensurePanel() {
+        if panel != nil, panelContent != nil { return }
         let size = contentSize
         let content = MenuBarPanelView(frame: NSRect(origin: .zero, size: size), topCount: AppPreferences.shared.menuBarTopCount)
         content.onOpenMain = { [weak self] in self?.openMainWindow() }
@@ -83,21 +101,6 @@ final class MenuBarController: NSObject, ObservableObject {
         panel.contentView = content
         panel.setContentSize(size)
         self.panel = panel
-
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.imagePosition = .imageOnly
-            button.imageScaling = .scaleProportionallyDown
-            button.toolTip = "SwiftInsight"
-            button.target = self
-            button.action = #selector(togglePanel(_:))
-            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
-        }
-        statusItem = item
-
-        installFocusObservers()
-        bindData(monitor)
-        bindPreferences()
     }
 
     private func bindPreferences() {
@@ -126,7 +129,7 @@ final class MenuBarController: NSObject, ObservableObject {
         }
     }
 
-    /// 失焦 / 切空间 / 其它 App 激活时自动关面板
+    /// 失焦 / 切空间 / 其它 App 激活时自动关面板（仅面板打开期间注册）
     private func installFocusObservers() {
         if resignObserver == nil {
             resignObserver = NotificationCenter.default.addObserver(
@@ -160,16 +163,35 @@ final class MenuBarController: NSObject, ObservableObject {
         }
     }
 
-    private func bindData(_ monitor: ProcessMonitor) {
+    private func removeFocusObservers() {
+        if let resignObserver {
+            NotificationCenter.default.removeObserver(resignObserver)
+            self.resignObserver = nil
+        }
+        if let spaceObserver {
+            NotificationCenter.default.removeObserver(spaceObserver)
+            self.spaceObserver = nil
+        }
+        if let otherAppObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(otherAppObserver)
+            self.otherAppObserver = nil
+        }
+    }
+
+    /// 常驻：只订阅 systemMetrics → 图标
+    private func bindIconOnly(_ monitor: ProcessMonitor) {
         dataCancellables.removeAll()
-        // 仅系统指标驱动图标；面板打开时才重载内容，避免后台每 2s 全量重建
         monitor.$systemMetrics
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self else { return }
-                self.refreshIcon()
+                self?.refreshIcon()
             }
             .store(in: &dataCancellables)
+        refreshIcon()
+    }
+
+    /// 面板打开时再订阅；关闭即取消
+    private func bindPanelData(_ monitor: ProcessMonitor) {
         Publishers.CombineLatest3(monitor.$systemMetrics, monitor.$summary, monitor.$rankings)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _, _ in
@@ -177,10 +199,6 @@ final class MenuBarController: NSObject, ObservableObject {
                 self.panelContent?.reload(from: monitor)
             }
             .store(in: &dataCancellables)
-        refreshIcon()
-        if isVisible {
-            panelContent?.reload(from: monitor)
-        }
     }
 
     private var isVisible: Bool { panel?.isVisible == true }
@@ -199,15 +217,19 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     private func showPanel() {
-        guard let button = statusItem?.button, let panel else { return }
+        guard let button = statusItem?.button else { return }
+        ensurePanel()
+        guard let panel else { return }
 
+        installFocusObservers()
         if let monitor {
-            // 切到面板轨：独立间隔 + 含排名采样（与图标轨分离）
+            // 先切面板轨并订阅，再展示；避免重复 reload
             monitor.setMenuBarPanelVisible(true)
-            panelContent?.reload(from: monitor)
-            panelContent?.layoutSubtreeIfNeeded()
+            bindPanelData(monitor)
             if !monitor.mainWindowVisible {
                 monitor.refreshPanel()
+            } else {
+                panelContent?.reload(from: monitor)
             }
         }
         panel.setContentSize(contentSize)
@@ -225,9 +247,22 @@ final class MenuBarController: NSObject, ObservableObject {
     func closePopover() { closePanel() }
 
     private func closePanel() {
+        guard isVisible || menuBarPanelFlag else {
+            stopEventMonitors()
+            return
+        }
         stopEventMonitors()
+        removeFocusObservers()
         panel?.orderOut(nil)
         monitor?.setMenuBarPanelVisible(false)
+        // 退回仅图标订阅
+        if let monitor {
+            bindIconOnly(monitor)
+        }
+    }
+
+    private var menuBarPanelFlag: Bool {
+        monitor?.menuBarPanelVisible == true
     }
 
     private func panelFrame(relativeTo button: NSStatusBarButton) -> NSRect {
@@ -418,15 +453,15 @@ final class MenuBarController: NSObject, ObservableObject {
         guard let monitor, let button = statusItem?.button else { return }
         let cpu = monitor.systemMetrics.cpuUsed
         let mem = monitor.systemMetrics.memoryUsedPercent
-        // 1% 分桶 + 模式；数值未变则跳过 NSImage 分配
-        let key = "\(iconMode.rawValue)|\(Int(cpu.rounded()))|\(Int(mem.rounded()))"
-        if key != lastIconKey {
-            lastIconKey = key
-            button.image = MenuBarIconRenderer.image(mode: iconMode, cpu: cpu, memory: mem)
-        }
+        let cpuBucket = Int(cpu.rounded())
+        let memBucket = Int(mem.rounded())
+        // 1% 分桶 + 模式；未变则跳过 image / tooltip / length
+        let key = "\(iconMode.rawValue)|\(cpuBucket)|\(memBucket)"
+        guard key != lastIconKey else { return }
+        lastIconKey = key
+        button.image = MenuBarIconRenderer.image(mode: iconMode, cpu: cpu, memory: mem)
         button.imagePosition = .imageOnly
-        button.toolTip = String(format: L("status.cpu_mem"), cpu, mem)
-        // 单指标图标更宽，双条保持紧凑
+        button.toolTip = String(format: L("status.cpu_mem"), Double(cpuBucket), Double(memBucket))
         switch iconMode {
         case .cpu, .memory:
             statusItem?.length = MenuBarIconRenderer.singleModeWidth + 2

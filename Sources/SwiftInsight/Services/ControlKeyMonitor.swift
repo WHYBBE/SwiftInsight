@@ -12,7 +12,21 @@ final class ControlKeyMonitor: ObservableObject {
 
     func start(processMonitor: ProcessMonitor) {
         self.processMonitor = processMonitor
-        stop()
+        // 默认不挂全局监听；主窗口打开时再 enable
+        stopMonitors(resumeRefresh: false)
+    }
+
+    /// 仅主窗口可见时启用 Control 暂停监听
+    func setEnabled(_ enabled: Bool) {
+        if enabled {
+            installMonitors()
+        } else {
+            stopMonitors(resumeRefresh: true)
+        }
+    }
+
+    private func installMonitors() {
+        guard localMonitor == nil, globalMonitor == nil else { return }
 
         let handler: (NSEvent) -> NSEvent? = { [weak self] event in
             Task { @MainActor in
@@ -22,18 +36,19 @@ final class ControlKeyMonitor: ObservableObject {
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: handler)
-        // 应用失去焦点时也能感知 Control 松开
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             Task { @MainActor in
                 self?.updateControlState(from: event.modifierFlags)
             }
         }
-
-        // 同步当前修饰键状态
         updateControlState(from: NSEvent.modifierFlags)
     }
 
     func stop() {
+        stopMonitors(resumeRefresh: true)
+    }
+
+    private func stopMonitors(resumeRefresh: Bool) {
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
@@ -43,7 +58,9 @@ final class ControlKeyMonitor: ObservableObject {
             self.globalMonitor = nil
         }
         isControlPressed = false
-        processMonitor?.setRefreshPaused(false)
+        if resumeRefresh {
+            processMonitor?.setRefreshPaused(false)
+        }
     }
 
     private func updateControlState(from flags: NSEvent.ModifierFlags) {

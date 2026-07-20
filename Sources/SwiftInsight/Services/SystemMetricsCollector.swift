@@ -15,22 +15,39 @@ enum SystemMetricsCollector {
     private static var cachedPCores: Int?
     private static var cachedECores: Int?
 
+    /// 全量：面板 / 主窗口
     static func sample() -> SystemMetrics {
+        sample(mode: .full)
+    }
+
+    /// 图标轨极简：仅聚合 CPU + 内存占用（无 per-core / 网络 / 磁盘 / swap）
+    static func sampleIcon() -> SystemMetrics {
+        sample(mode: .icon)
+    }
+
+    enum SampleMode {
+        case icon
+        case full
+    }
+
+    static func sample(mode: SampleMode) -> SystemMetrics {
         var metrics = SystemMetrics()
         metrics.processorCount = ProcessInfo.processInfo.activeProcessorCount
         metrics.physicalMemory = ProcessInfo.processInfo.physicalMemory
         metrics.thermalState = ProcessInfo.processInfo.thermalState.rawValue
-        fillCoreTopology(&metrics)
 
         fillCPU(&metrics)
-        fillPerCoreCPU(&metrics)
-        fillSwap(&metrics)
         fillMemory(&metrics)
-        fillLoad(&metrics)
-        fillNetwork(&metrics)
-        fillDisk(&metrics)
-        // Intel 可公开读频率；Apple Silicon 需 helper sensors
-        fillPublicFrequency(&metrics)
+
+        if mode == .full {
+            fillCoreTopology(&metrics)
+            fillPerCoreCPU(&metrics)
+            fillSwap(&metrics)
+            fillLoad(&metrics)
+            fillNetwork(&metrics)
+            fillDisk(&metrics)
+            fillPublicFrequency(&metrics)
+        }
         return metrics
     }
 

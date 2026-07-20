@@ -7,9 +7,27 @@ enum MenuBarIconRenderer {
     static let singleModeWidth: CGFloat = 22
     static let combinedWidth: CGFloat = 18
 
+    private static let imageCache = NSCache<NSString, NSImage>()
+    private static let labelAttrs: [NSAttributedString.Key: Any] = {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        return [
+            .font: NSFont.systemFont(ofSize: 8, weight: .bold),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: style,
+        ]
+    }()
+
     static func image(mode: MenuBarIconMode, cpu: Double, memory: Double) -> NSImage {
-        let cpuLevel = CGFloat(min(100, max(0, cpu)) / 100)
-        let memLevel = CGFloat(min(100, max(0, memory)) / 100)
+        let cpuBucket = Int(min(100, max(0, cpu)).rounded())
+        let memBucket = Int(min(100, max(0, memory)).rounded())
+        let cacheKey = "\(mode.rawValue)|\(cpuBucket)|\(memBucket)" as NSString
+        if let cached = imageCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        let cpuLevel = CGFloat(cpuBucket) / 100
+        let memLevel = CGFloat(memBucket) / 100
 
         let size: NSSize
         switch mode {
@@ -26,27 +44,29 @@ enum MenuBarIconRenderer {
                     in: rect,
                     label: "CPU",
                     level: cpuLevel,
-                    color: color(for: cpu)
+                    color: color(for: Double(cpuBucket))
                 )
             case .memory:
                 drawLabeledHorizontal(
                     in: rect,
                     label: "MEM",
                     level: memLevel,
-                    color: color(for: memory)
+                    color: color(for: Double(memBucket))
                 )
             case .combined:
                 drawDualBars(
                     in: rect,
                     cpu: cpuLevel,
                     memory: memLevel,
-                    cpuColor: color(for: cpu),
-                    memColor: color(for: memory)
+                    cpuColor: color(for: Double(cpuBucket)),
+                    memColor: color(for: Double(memBucket))
                 )
             }
             return true
         }
         image.isTemplate = false
+        imageCache.countLimit = 64
+        imageCache.setObject(image, forKey: cacheKey)
         return image
     }
 
@@ -66,20 +86,13 @@ enum MenuBarIconRenderer {
         let contentH = labelHeight + gap + barHeight
         let topY = rect.minY + (rect.height - contentH) / 2 + barHeight + gap
 
-        let style = NSMutableParagraphStyle()
-        style.alignment = .center
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 8, weight: .bold),
-            .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: style,
-        ]
         let labelRect = NSRect(
             x: rect.minX,
             y: topY,
             width: rect.width,
             height: labelHeight
         )
-        label.draw(in: labelRect, withAttributes: attrs)
+        label.draw(in: labelRect, withAttributes: labelAttrs)
 
         let barRect = NSRect(
             x: rect.minX + padX,
