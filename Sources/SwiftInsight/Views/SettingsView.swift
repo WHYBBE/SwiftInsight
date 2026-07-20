@@ -41,6 +41,9 @@ struct SettingsView: View {
                     Text(L("settings.5s")).tag(5.0)
                     Text(L("settings.10s")).tag(10.0)
                 }
+                Text(L("settings.refresh.main.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 LabeledContent(L("settings.pause_refresh")) {
                     Text(L("settings.hold_control"))
                         .foregroundStyle(.secondary)
@@ -56,6 +59,24 @@ struct SettingsView: View {
                         Text(mode.displayName).tag(mode)
                     }
                 }
+                Picker(L("settings.menubar.icon_interval"), selection: $monitor.menuBarIconInterval) {
+                    Text(L("settings.2s")).tag(2.0)
+                    Text(L("settings.3s")).tag(3.0)
+                    Text(L("settings.5s")).tag(5.0)
+                    Text(L("settings.10s")).tag(10.0)
+                }
+                Text(L("settings.menubar.icon.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker(L("settings.menubar.panel_interval"), selection: $monitor.menuBarPanelInterval) {
+                    Text(L("settings.1s")).tag(1.0)
+                    Text(L("settings.2s")).tag(2.0)
+                    Text(L("settings.3s")).tag(3.0)
+                    Text(L("settings.5s")).tag(5.0)
+                }
+                Text(L("settings.menubar.panel.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Picker(L("settings.menubar.top_count"), selection: $prefs.menuBarTopCount) {
                     ForEach(Array(AppPreferences.menuBarTopCountRange), id: \.self) { n in
                         Text("\(n)").tag(n)

@@ -202,9 +202,13 @@ final class MenuBarController: NSObject, ObservableObject {
         guard let button = statusItem?.button, let panel else { return }
 
         if let monitor {
+            // 切到面板轨：独立间隔 + 含排名采样（与图标轨分离）
+            monitor.setMenuBarPanelVisible(true)
             panelContent?.reload(from: monitor)
             panelContent?.layoutSubtreeIfNeeded()
-            monitor.refresh()
+            if !monitor.mainWindowVisible {
+                monitor.refreshPanel()
+            }
         }
         panel.setContentSize(contentSize)
 
@@ -223,6 +227,7 @@ final class MenuBarController: NSObject, ObservableObject {
     private func closePanel() {
         stopEventMonitors()
         panel?.orderOut(nil)
+        monitor?.setMenuBarPanelVisible(false)
     }
 
     private func panelFrame(relativeTo button: NSStatusBarButton) -> NSRect {

@@ -54,10 +54,12 @@ struct ContentView: View {
                     Text(L("settings.1s")).tag(1.0)
                     Text(L("settings.2s")).tag(2.0)
                     Text(L("settings.5s")).tag(5.0)
+                    Text(L("settings.10s")).tag(10.0)
                 }
                 .pickerStyle(.menu)
                 .frame(width: 80)
                 .disabled(monitor.isRefreshPaused)
+                .help(L("settings.refresh.main.caption"))
 
                 Button {
                     monitor.refresh()

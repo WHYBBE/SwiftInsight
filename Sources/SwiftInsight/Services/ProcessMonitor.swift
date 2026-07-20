@@ -17,11 +17,38 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var processHistory: [MetricSample] = []
     @Published private(set) var lastUpdate: Date = .distantPast
     @Published private(set) var isRunning = false
-    /// 按住 Control 时为 true，自动刷新暂停
+    /// 按住 Control 时为 true：仅暂停主窗口自动刷新（菜单栏常驻采样不受影响）
     @Published private(set) var isRefreshPaused = false
+    /// 主窗口：完整进程列表（仅主窗口可见时）
     @Published var refreshInterval: TimeInterval = 2.0 {
-        didSet { restartTimer() }
+        didSet {
+            UserDefaults.standard.set(refreshInterval, forKey: Self.mainIntervalKey)
+            restartMainTimer()
+        }
     }
+    /// 菜单栏图标：仅整机 CPU/内存（主窗口关闭且面板未开时）
+    @Published var menuBarIconInterval: TimeInterval = 3.0 {
+        didSet {
+            UserDefaults.standard.set(menuBarIconInterval, forKey: Self.iconIntervalKey)
+            restartIconTimer()
+        }
+    }
+    /// 菜单栏面板：含 Top 排名（仅面板展开时）
+    @Published var menuBarPanelInterval: TimeInterval = 2.0 {
+        didSet {
+            UserDefaults.standard.set(menuBarPanelInterval, forKey: Self.panelIntervalKey)
+            restartPanelTimer()
+        }
+    }
+    /// 兼容旧设置键；映射到图标间隔
+    var menuBarRefreshInterval: TimeInterval {
+        get { menuBarIconInterval }
+        set { menuBarIconInterval = newValue }
+    }
+    /// 主窗口是否可见（由 MainWindowCoordinator 同步）
+    @Published private(set) var mainWindowVisible = false
+    /// 菜单栏面板是否展开
+    @Published private(set) var menuBarPanelVisible = false
 
     @Published var sortColumn: SortColumn = .cpu {
         didSet { recomputeDisplayed() }
@@ -60,7 +87,9 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var privilegedHelperInstalled = false
     @Published private(set) var privilegedHelperRoot = false
 
-    private var timer: Timer?
+    private var mainTimer: Timer?
+    private var iconTimer: Timer?
+    private var panelTimer: Timer?
     private var sampleWatchdog: DispatchWorkItem?
     private var previousCPU: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
     private var classificationCache: [Int32: (path: String, category: ProcessCategory, kind: ProcessKind, bid: String?)] = [:]
@@ -71,27 +100,55 @@ final class ProcessMonitor: ObservableObject {
     private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .userInitiated)
     private let historyStore = MetricsHistoryStore()
 
+    private static let mainIntervalKey = "mainRefreshInterval"
+    private static let iconIntervalKey = "menuBarIconInterval"
+    private static let panelIntervalKey = "menuBarPanelInterval"
+    private static let legacyMenuBarIntervalKey = "menuBarRefreshInterval"
+
     /// 状态栏文案
     var statusText: String {
         if !isRunning {
             return L("status.stopped")
         }
-        if isRefreshPaused {
-            return L("status.paused")
+        if mainWindowVisible {
+            if isRefreshPaused {
+                return L("status.paused")
+            }
+            return String(format: L("status.live"), Int(refreshInterval))
         }
-        return String(format: L("status.live"), Int(refreshInterval))
+        if menuBarPanelVisible {
+            return String(format: L("status.panel_live"), Int(menuBarPanelInterval))
+        }
+        return String(format: L("status.icon_live"), Int(menuBarIconInterval))
     }
 
     // MARK: - Lifecycle
 
     func start() {
         guard !isRunning else { return }
+        // 先恢复间隔（isRunning 仍为 false，didSet 不会真正启表）
+        if let saved = UserDefaults.standard.object(forKey: Self.mainIntervalKey) as? Double,
+           [1.0, 2.0, 5.0, 10.0].contains(saved) {
+            refreshInterval = saved
+        }
+        if let saved = UserDefaults.standard.object(forKey: Self.iconIntervalKey) as? Double,
+           [2.0, 3.0, 5.0, 10.0].contains(saved) {
+            menuBarIconInterval = saved
+        } else if let legacy = UserDefaults.standard.object(forKey: Self.legacyMenuBarIntervalKey) as? Double,
+                  [2.0, 3.0, 5.0, 10.0].contains(legacy) {
+            menuBarIconInterval = legacy
+        }
+        if let saved = UserDefaults.standard.object(forKey: Self.panelIntervalKey) as? Double,
+           [1.0, 2.0, 3.0, 5.0].contains(saved) {
+            menuBarPanelInterval = saved
+        }
         isRunning = true
         // 未知分类已从 UI 移除；若仍挂着旧筛选会看起来像「没数据」
         if categoryFilter == .unknown {
             categoryFilter = nil
         }
         isRefreshPaused = false
+        mainWindowVisible = !MainWindowCoordinator.visibleMainWindows().isEmpty
         refreshHelperStatus()
         // 预热系统指标基线，避免首帧 CPU 无差分
         sampleQueue.async {
@@ -99,8 +156,13 @@ final class ProcessMonitor: ObservableObject {
                 _ = SystemMetricsCollector.sample()
             }
         }
-        refresh()
-        restartTimer()
+        // 启动时先采一帧
+        if mainWindowVisible {
+            refreshFull()
+        } else {
+            refreshIconMetrics()
+        }
+        restartTimers()
     }
 
     func refreshHelperStatus() {
@@ -111,32 +173,108 @@ final class ProcessMonitor: ObservableObject {
 
     func stop() {
         isRunning = false
-        timer?.invalidate()
-        timer = nil
+        mainTimer?.invalidate()
+        mainTimer = nil
+        iconTimer?.invalidate()
+        iconTimer = nil
+        panelTimer?.invalidate()
+        panelTimer = nil
         sampleWatchdog?.cancel()
         sampleWatchdog = nil
         isSampling = false
     }
 
+    /// Control 键：仅影响主窗口自动刷新
     func setRefreshPaused(_ paused: Bool) {
         guard isRefreshPaused != paused else { return }
         isRefreshPaused = paused
-        if !paused, isRunning {
-            refresh()
+        if !paused, isRunning, mainWindowVisible {
+            refreshFull()
         }
     }
 
-    private func restartTimer() {
-        timer?.invalidate()
+    /// 主窗口显示/隐藏时由协调器调用
+    func setMainWindowVisible(_ visible: Bool) {
+        guard mainWindowVisible != visible else { return }
+        mainWindowVisible = visible
+        restartTimers()
         guard isRunning else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.isRunning, !self.isRefreshPaused else { return }
-                self.refresh()
+        if visible {
+            if !isRefreshPaused {
+                refreshFull()
+            }
+        } else if menuBarPanelVisible {
+            refreshPanel()
+        } else {
+            refreshIconMetrics()
+        }
+    }
+
+    /// 菜单栏面板展开/收起：切换图标轨 ↔ 面板轨
+    func setMenuBarPanelVisible(_ visible: Bool) {
+        guard menuBarPanelVisible != visible else { return }
+        menuBarPanelVisible = visible
+        restartIconTimer()
+        restartPanelTimer()
+        guard isRunning else { return }
+        if visible {
+            // 主窗口已在采全量时直接用现成 rankings；否则立刻面板采样
+            if !mainWindowVisible {
+                refreshPanel()
             }
         }
-        if let timer {
-            RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func restartTimers() {
+        restartMainTimer()
+        restartIconTimer()
+        restartPanelTimer()
+    }
+
+    private func restartMainTimer() {
+        mainTimer?.invalidate()
+        mainTimer = nil
+        guard isRunning, mainWindowVisible else { return }
+        mainTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isRunning, self.mainWindowVisible, !self.isRefreshPaused else { return }
+                self.refreshFull()
+            }
+        }
+        if let mainTimer {
+            RunLoop.main.add(mainTimer, forMode: .common)
+        }
+    }
+
+    /// 图标轨：主窗口关 + 面板关 → 只刷整机指标
+    private func restartIconTimer() {
+        iconTimer?.invalidate()
+        iconTimer = nil
+        guard isRunning, !mainWindowVisible, !menuBarPanelVisible else { return }
+        iconTimer = Timer.scheduledTimer(withTimeInterval: menuBarIconInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isRunning, !self.mainWindowVisible, !self.menuBarPanelVisible else { return }
+                self.refreshIconMetrics()
+            }
+        }
+        if let iconTimer {
+            RunLoop.main.add(iconTimer, forMode: .common)
+        }
+    }
+
+    /// 面板轨：仅面板展开时跑（含排名）；主窗口打开时复用全量数据，不另开采样
+    private func restartPanelTimer() {
+        panelTimer?.invalidate()
+        panelTimer = nil
+        guard isRunning, menuBarPanelVisible, !mainWindowVisible else { return }
+        panelTimer = Timer.scheduledTimer(withTimeInterval: menuBarPanelInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isRunning, self.menuBarPanelVisible, !self.mainWindowVisible else { return }
+                self.refreshPanel()
+            }
+        }
+        if let panelTimer {
+            RunLoop.main.add(panelTimer, forMode: .common)
         }
     }
 
@@ -294,41 +432,82 @@ final class ProcessMonitor: ObservableObject {
         let sig = force ? SIGKILL : SIGTERM
         kill(pid, sig)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refresh()
+            self?.refreshFull()
         }
     }
 
-    // MARK: - Core refresh（后台采集，主线程下一帧提交）
+    // MARK: - Core refresh（三轨：图标 / 面板 / 主窗口）
 
+    /// 工具栏 / 快捷键：完整刷新（主窗口）
     func refresh() {
+        refreshFull()
+    }
+
+    /// 主窗口：全量进程 + 排名 + 历史 + 详情
+    func refreshFull() {
+        beginSample(kind: .full)
+    }
+
+    /// 菜单栏图标：仅整机 CPU/内存（不枚举进程）
+    func refreshIconMetrics() {
+        beginSample(kind: .icon)
+    }
+
+    /// 菜单栏面板：整机 + Top 排名（不刷主窗口列表/历史/详情）
+    func refreshPanel() {
+        beginSample(kind: .panel)
+    }
+
+    private enum SampleKind {
+        /// 仅整机指标（状态栏图标）
+        case icon
+        /// 整机 + 进程排名（点击弹出的面板）
+        case panel
+        /// 主窗口全量
+        case full
+    }
+
+    private func beginSample(kind: SampleKind) {
         guard !isSampling else { return }
         isSampling = true
 
         let previousCPU = self.previousCPU
         let classificationCache = self.classificationCache
         let usernameCache = self.usernameCache
+        let needProcesses = (kind != .icon)
 
         sampleQueue.async { [weak self] in
-            // GCD 队列无 runloop autorelease pool；包一层避免 ObjC 临时对象堆积
             let snapshot: ProcessSampler.Snapshot = autoreleasepool {
-                let privileged = PrivilegedMetricsClient.sampleAll()
                 let sensors = PrivilegedMetricsClient.currentSensors()
-                PrivilegedMetricsClient.refreshSensorsAsync()
-                return ProcessSampler.collect(
-                    previousCPU: previousCPU,
-                    classificationCache: classificationCache,
-                    usernameCache: usernameCache,
-                    privileged: privileged,
-                    sensors: sensors
-                )
+                // sensors 较慢：图标轨不刷；面板/主窗口才后台刷新
+                if kind != .icon {
+                    PrivilegedMetricsClient.refreshSensorsAsync()
+                }
+                if needProcesses {
+                    let privileged = PrivilegedMetricsClient.sampleAll()
+                    return ProcessSampler.collect(
+                        previousCPU: previousCPU,
+                        classificationCache: classificationCache,
+                        usernameCache: usernameCache,
+                        privileged: privileged,
+                        sensors: sensors
+                    )
+                }
+                return ProcessSampler.collectMetricsOnly(sensors: sensors)
             }
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.applySnapshot(snapshot)
+                switch kind {
+                case .icon:
+                    self.applyIconSnapshot(snapshot)
+                case .panel:
+                    self.applyPanelSnapshot(snapshot)
+                case .full:
+                    self.applyFullSnapshot(snapshot)
+                }
             }
         }
 
-        // 兜底：采样卡死时强制解锁（可取消，避免每 tick 堆积 work item）
         sampleWatchdog?.cancel()
         let watchdog = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -340,10 +519,38 @@ final class ProcessMonitor: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: watchdog)
     }
 
-    private func applySnapshot(_ snapshot: ProcessSampler.Snapshot) {
+    private func finishSample() {
+        isSampling = false
+        sampleWatchdog?.cancel()
+        sampleWatchdog = nil
+    }
+
+    /// 图标轨：只更新系统指标（驱动状态栏条）
+    private func applyIconSnapshot(_ snapshot: ProcessSampler.Snapshot) {
+        lastUpdate = snapshot.timestamp
+        systemMetrics = snapshot.systemMetrics
+        finishSample()
+    }
+
+    /// 面板轨：系统指标 + 排名（不刷主窗口列表/历史/详情）
+    private func applyPanelSnapshot(_ snapshot: ProcessSampler.Snapshot) {
         previousCPU = snapshot.previousCPU
         classificationCache = snapshot.classificationCache
-        // 用户名缓存按活跃 UID 裁剪，防止长期多用户场景膨胀
+        let liveUIDs = Set(snapshot.processes.map(\.uid))
+        usernameCache = snapshot.usernameCache.filter { liveUIDs.contains($0.key) }
+        lastUpdate = snapshot.timestamp
+        summary = snapshot.summary
+        // 保留进程数据供面板 Top 列表；不 recomputeDisplayed / history / detail
+        processes = snapshot.processes
+        systemMetrics = snapshot.systemMetrics
+        rankings = Self.buildRankings(from: snapshot.processes)
+        finishSample()
+    }
+
+    /// 主窗口全量
+    private func applyFullSnapshot(_ snapshot: ProcessSampler.Snapshot) {
+        previousCPU = snapshot.previousCPU
+        classificationCache = snapshot.classificationCache
         let liveUIDs = Set(snapshot.processes.map(\.uid))
         usernameCache = snapshot.usernameCache.filter { liveUIDs.contains($0.key) }
         lastUpdate = snapshot.timestamp
@@ -362,9 +569,7 @@ final class ProcessMonitor: ObservableObject {
 
         recomputeDisplayed()
         refreshInspectedDetail(force: false)
-        isSampling = false
-        sampleWatchdog?.cancel()
-        sampleWatchdog = nil
+        finishSample()
     }
 
     private func publishHistory() {
@@ -440,6 +645,24 @@ private enum ProcessSampler {
         var usernameCache: [uid_t: String]
         var systemMetrics: SystemMetrics
         var timestamp: Date
+    }
+
+    /// 仅整机指标（菜单栏图标常驻路径，不枚举进程）
+    static func collectMetricsOnly(
+        sensors: PrivilegedMetricsClient.Sensors = .init()
+    ) -> Snapshot {
+        let now = Date()
+        var systemMetrics = SystemMetricsCollector.sample()
+        PrivilegedMetricsClient.applySensors(sensors, to: &systemMetrics)
+        return Snapshot(
+            processes: [],
+            summary: ResourceSummary(),
+            previousCPU: [:],
+            classificationCache: [:],
+            usernameCache: [:],
+            systemMetrics: systemMetrics,
+            timestamp: now
+        )
     }
 
     static func collect(

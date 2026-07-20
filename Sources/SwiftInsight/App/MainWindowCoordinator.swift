@@ -8,6 +8,13 @@ extension Notification.Name {
 enum MainWindowCoordinator {
     static let mainWindowID = "main-swiftinsight"
     private static var closeHandlers: [ObjectIdentifier: WindowCloseHandler] = [:]
+    /// 用于同步双轨刷新（主窗口完整 / 菜单栏轻量）
+    private static weak var processMonitor: ProcessMonitor?
+
+    static func bindProcessMonitor(_ monitor: ProcessMonitor) {
+        processMonitor = monitor
+        notifyMainVisibility()
+    }
 
     static func isMainWindow(_ window: NSWindow) -> Bool {
         if window.identifier?.rawValue == mainWindowID { return true }
@@ -34,6 +41,7 @@ enum MainWindowCoordinator {
             closeHandlers[key] = handler
             window.delegate = handler
         }
+        notifyMainVisibility()
     }
 
     static func showMainWindow() {
@@ -93,6 +101,14 @@ enum MainWindowCoordinator {
         } else if NSApp.activationPolicy() != .accessory {
             NSApp.setActivationPolicy(.accessory)
         }
+        notifyMainVisibility()
+    }
+
+    fileprivate static func notifyMainVisibility() {
+        let visible = !visibleMainWindows().isEmpty
+        Task { @MainActor in
+            processMonitor?.setMainWindowVisible(visible)
+        }
     }
 }
 
@@ -110,6 +126,24 @@ private final class WindowCloseHandler: NSObject, NSWindowDelegate {
             MainWindowCoordinator.updateDockVisibility()
         }
         return false
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        DispatchQueue.main.async {
+            MainWindowCoordinator.updateDockVisibility()
+        }
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        DispatchQueue.main.async {
+            MainWindowCoordinator.updateDockVisibility()
+        }
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        DispatchQueue.main.async {
+            MainWindowCoordinator.notifyMainVisibility()
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

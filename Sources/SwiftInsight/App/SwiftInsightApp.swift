@@ -20,6 +20,7 @@ struct SwiftInsightApp: App {
                 .background(MainWindowAccessor())
                 .background(MainWindowOpenBridge())
                 .onAppear {
+                    MainWindowCoordinator.bindProcessMonitor(monitor)
                     monitor.start()
                     controlKeyMonitor.start(processMonitor: monitor)
                     menuBar.onOpenMain = {
@@ -31,6 +32,7 @@ struct SwiftInsightApp: App {
                         if let window = NSApp.windows.first(where: { MainWindowCoordinator.isMainWindow($0) }) {
                             MainWindowCoordinator.attachMainWindow(window)
                         }
+                        MainWindowCoordinator.updateDockVisibility()
                     }
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
